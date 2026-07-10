@@ -1,0 +1,156 @@
+version: "3.9"
+
+# ── Dev Container Docker Compose ──────────────────────────────────────────────
+# This file is used by VS Code Dev Containers ONLY.
+# For production / local docker use the root docker-compose.yml instead.
+
+services:
+
+  # ── Dev Container ────────────────────────────────────────────────────────────
+  devcontainer:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    container_name: bread-devcontainer
+    volumes:
+      # Mount workspace (source code)
+      - ..:/workspace:cached
+      # Persist Go module cache across rebuilds
+      - go-mod-cache:/go/pkg/mod
+      # Persist Go build cache
+      - go-build-cache:/root/.cache/go-build
+      # Persist npm cache
+      - npm-cache:/root/.npm
+      # Mount Docker socket so 'docker' CLI works inside devcontainer
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Service discovery — use Docker service names (same network)
+      MONGO_URI:    "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&serverSelectionTimeoutMS=5000"
+      MONGO_DB_NAME: "bread_boilerplate"
+      REDIS_HOST:   "redis"
+      REDIS_PORT:   "6379"
+      APP_ENV:      "development"
+      APP_PORT:     "3000"
+      GOPATH:       "/go"
+      GOBIN:        "/go/bin"
+    # Keep container running
+    command: sleep infinity
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - devnet
+    ports:
+      # Forward API port to host for browser access
+      - "3000:3000"
+      # Forward web test client (Vite dev server) to host for browser access
+      - "5173:5173"
+
+  # ── MongoDB Replica Set ───────────────────────────────────────────────────────
+  mongo1:
+    image: mongo:8.0
+    container_name: bread-dev-mongo1
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - devnet
+
+  mongo2:
+    image: mongo:8.0
+    container_name: bread-dev-mongo2
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - mongo2-data:/data/db
+    networks:
+      - devnet
+
+  mongo3:
+    image: mongo:8.0
+    container_name: bread-dev-mongo3
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - mongo3-data:/data/db
+    networks:
+      - devnet
+
+  # Initialise replica set — runs once, idempotent
+  mongo-init:
+    image: mongo:8.0
+    container_name: bread-dev-mongo-init
+    restart: "no"
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_started
+      mongo3:
+        condition: service_started
+    command: >
+      mongosh --host mongo1:27017 --eval
+      'try {
+        rs.status();
+        print("Replica set already initialised");
+      } catch(e) {
+        rs.initiate({
+          _id: "rs0",
+          members: [
+            { _id: 0, host: "mongo1:27017", priority: 2 },
+            { _id: 1, host: "mongo2:27017", priority: 1 },
+            { _id: 2, host: "mongo3:27017", priority: 1 }
+          ]
+        });
+        print("Replica set initialised");
+      }'
+    networks:
+      - devnet
+
+  # ── Redis ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:8.0-alpine
+    container_name: bread-dev-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - devnet
+
+volumes:
+  mongo1-data:
+  mongo2-data:
+  mongo3-data:
+  redis-data:
+  go-mod-cache:
+  go-build-cache:
+  npm-cache:
+
+networks:
+  devnet:
+    driver: bridge

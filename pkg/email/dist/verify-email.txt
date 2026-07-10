@@ -1,0 +1,10 @@
+__GREETING__
+
+__BODY__
+
+__CTA_LABEL__: __VERIFY_LINK__
+
+__EXPIRE_NOTE__
+__IGNORE_NOTE__
+
+__BRAND_NAME__

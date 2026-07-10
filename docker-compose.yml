@@ -1,0 +1,189 @@
+version: "3.9"
+
+services:
+
+  # ── Application ───────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bread-go-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    # env_file supplies optional overrides (API keys, secrets, etc.)
+    # Environment block below ALWAYS wins — sets service-name URIs.
+    env_file:
+      - path: .env
+        required: false          # don't fail if .env doesn't exist yet
+    environment:
+      # ── Service discovery (must use Docker service names inside the network) ─
+      MONGO_URI: "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&serverSelectionTimeoutMS=5000"
+      MONGO_DB_NAME: "bread_boilerplate"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      # ── App identity ──────────────────────────────────────────────────────────
+      APP_ENV: "development"
+      APP_PORT: "3000"
+      # ── JWT key paths (mounted from host via volume below) ────────────────────
+      JWT_ACCESS_PRIVATE_KEY_PATH:  "/app/keys/access_private.pem"
+      JWT_ACCESS_PUBLIC_KEY_PATH:   "/app/keys/access_public.pem"
+      JWT_REFRESH_PRIVATE_KEY_PATH: "/app/keys/refresh_private.pem"
+      JWT_REFRESH_PUBLIC_KEY_PATH:  "/app/keys/refresh_public.pem"
+      # ── WebAuthn ──────────────────────────────────────────────────────────────
+      WEBAUTHN_RP_ID:     "localhost"
+      WEBAUTHN_RP_ORIGIN: "http://localhost:3000"
+      WEBAUTHN_RP_NAME:   "Bread Boilerplate"
+      # ── i18n ──────────────────────────────────────────────────────────────────
+      LOCALES_DIR: "/app/locales"
+      DEFAULT_LANG: "en"
+      # ── Rate limiting ─────────────────────────────────────────────────────────
+      RATE_LIMIT_REQUESTS: "100"
+      RATE_LIMIT_PERIOD:   "1m"
+    volumes:
+      - ./keys:/app/keys:ro
+      - ./locales:/app/locales:ro
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - bread-net
+
+  # ── MongoDB Replica Set ────────────────────────────────────────────────────────
+  mongo1:
+    image: mongo:8.0
+    container_name: bread-mongo1
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - bread-net
+
+  mongo2:
+    image: mongo:8.0
+    container_name: bread-mongo2
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - mongo2-data:/data/db
+    networks:
+      - bread-net
+
+  mongo3:
+    image: mongo:8.0
+    container_name: bread-mongo3
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - mongo3-data:/data/db
+    networks:
+      - bread-net
+
+  # Initialises the replica set once — idempotent
+  mongo-init:
+    image: mongo:8.0
+    container_name: bread-mongo-init
+    restart: "no"
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_started
+      mongo3:
+        condition: service_started
+    command: >
+      mongosh --host mongo1:27017 --eval
+      'try {
+        rs.status();
+        print("Replica set already initialised");
+      } catch(e) {
+        rs.initiate({
+          _id: "rs0",
+          members: [
+            { _id: 0, host: "mongo1:27017", priority: 2 },
+            { _id: 1, host: "mongo2:27017", priority: 1 },
+            { _id: 2, host: "mongo3:27017", priority: 1 }
+          ]
+        });
+        print("Replica set initialised");
+      }'
+    networks:
+      - bread-net
+
+  # ── Redis ──────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:8.0-alpine
+    container_name: bread-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - bread-net
+
+  # ── Background worker (optional) ───────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: bread-go-worker
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGO_URI:    "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0"
+      MONGO_DB_NAME: "bread_boilerplate"
+      REDIS_HOST:   "redis"
+      REDIS_PORT:   "6379"
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo1:
+        condition: service_healthy
+    networks:
+      - bread-net
+    profiles:
+      - worker
+
+volumes:
+  mongo1-data:
+  mongo2-data:
+  mongo3-data:
+  redis-data:
+
+networks:
+  bread-net:
+    driver: bridge

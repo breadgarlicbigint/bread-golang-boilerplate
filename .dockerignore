@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+.github
+
+# Build artefacts
+build/
+.air/
+*.test
+coverage.out
+coverage.html
+
+# Local environment — never bake secrets into the image
+.env
+.env.local
+.env.*.local
+
+# EC key pairs — mounted at runtime via Docker secrets / volume
+keys/
+*.pem
+*.p8
+
+# Firebase service account — mounted at runtime
+*service-account*.json
+firebase-*.json
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docs — exclude markdown but keep swagger (needed for compilation)
+docs/*.md
+README.md
+
+# Test files (not needed in production image)
+tests/
+*_test.go
+
+# Vendor (use module cache instead)
+vendor/
+
+# Node (shouldn't exist but just in case)
+node_modules/
+
+# Email templates - node_modules excluded, src needed for Docker build
+email-templates/node_modules/
+email-templates/dist-ts/

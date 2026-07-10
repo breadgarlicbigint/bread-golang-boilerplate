@@ -1,0 +1,103 @@
+{
+  "name": "Bread Golang Boilerplate",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+
+  // ── Forwarded ports ────────────────────────────────────────────────────────
+  "forwardPorts": [3000, 5173, 6379, 27017],
+  "portsAttributes": {
+    "3000": { "label": "API Server",      "onAutoForward": "notify" },
+    "5173": { "label": "Web Test Client", "onAutoForward": "notify" },
+    "27017": { "label": "MongoDB",        "onAutoForward": "silent" },
+    "6379": { "label": "Redis",           "onAutoForward": "silent" }
+  },
+
+  // ── Lifecycle scripts ──────────────────────────────────────────────────────
+  "postCreateCommand": "bash /workspace/.devcontainer/post-create.sh",
+  "postStartCommand": "bash /workspace/.devcontainer/post-start.sh",
+
+  // ── VS Code customisations ─────────────────────────────────────────────────
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // Go
+        "golang.go",
+        // REST testing
+        "humao.rest-client",
+        // Docker
+        "ms-azuretools.vscode-docker",
+        // Env files
+        "mikestead.dotenv",
+        // Editor config
+        "editorconfig.editorconfig",
+        // Prettier (for .tsx email templates)
+        "esbenp.prettier-vscode",
+        // Tailwind (used by React Email templates)
+        "bradlc.vscode-tailwindcss",
+        // YAML (docker-compose, etc.)
+        "redhat.vscode-yaml",
+        // Git
+        "mhutchie.git-graph",
+        // Swagger preview
+        "42crunch.vscode-openapi",
+        // Thunder Client
+        "rangav.vscode-thunder-client",
+        // Error lens
+        "usernamehw.errorlens"
+      ],
+
+      "settings": {
+        // Go settings
+        "go.useLanguageServer": true,
+        "go.toolsManagement.autoUpdate": true,
+        "go.lintTool": "golangci-lint",
+        "go.lintFlags": ["--fast"],
+        "go.formatTool": "goimports",
+        "go.testFlags": ["-v", "-race"],
+        "[go]": {
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        },
+
+        // Editor
+        "editor.tabSize": 4,
+        "editor.insertSpaces": false,
+        "editor.rulers": [100],
+        "editor.formatOnSave": true,
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true,
+
+        // Tailwind (for email templates)
+        "tailwindCSS.includeLanguages": { "typescript": "javascript" },
+        "tailwindCSS.experimental.classRegex": [
+          "className=\"([^\"]*)\""
+        ],
+
+        // Terminal
+        "terminal.integrated.defaultProfile.linux": "bash",
+
+        // File associations
+        "files.associations": {
+          "*.env.example": "dotenv",
+          ".env": "dotenv"
+        }
+      }
+    }
+  },
+
+  // ── Remote environment ─────────────────────────────────────────────────────
+  "remoteEnv": {
+    "GOPATH": "/go",
+    "GOBIN": "/go/bin",
+    "PATH": "/go/bin:/usr/local/go/bin:${containerEnv:PATH}"
+  },
+
+  // ── Features (optional add-ons) ────────────────────────────────────────────
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  }
+}

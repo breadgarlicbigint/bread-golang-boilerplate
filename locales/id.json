@@ -1,0 +1,148 @@
+{
+  "language": "id",
+  "http": {
+    "200": "Permintaan berhasil",
+    "201": "Sumber daya berhasil dibuat",
+    "204": "Tidak ada konten",
+    "400": "Permintaan tidak valid",
+    "401": "Tidak terautentikasi",
+    "403": "Akses ditolak",
+    "404": "Tidak ditemukan",
+    "409": "Konflik data",
+    "422": "Entitas tidak dapat diproses",
+    "426": "Pembaruan diperlukan",
+    "429": "Terlalu banyak permintaan",
+    "500": "Kesalahan server internal"
+  },
+  "auth": {
+    "loginSuccess": "Login berhasil",
+    "logoutSuccess": "Berhasil keluar",
+    "logoutAllSuccess": "Berhasil keluar dari semua perangkat",
+    "registerSuccess": "Pendaftaran berhasil",
+    "refreshSuccess": "Token diperbarui",
+    "invalidCredentials": "Email atau kata sandi salah",
+    "accountLocked": "Akun dikunci sementara. Coba lagi nanti.",
+    "tokenExpired": "Token telah kedaluwarsa",
+    "tokenInvalid": "Token tidak valid",
+    "sessionRevoked": "Sesi telah dicabut",
+    "emailNotVerified": "Harap verifikasi email Anda sebelum masuk",
+    "twoFAEnabled": "Autentikasi dua faktor diaktifkan",
+    "twoFASetupInitiated": "Pengaturan 2FA dimulai. Pindai kode QR dengan aplikasi autentikator Anda.",
+    "twoFAVerifySuccess": "Autentikasi dua faktor berhasil diverifikasi dan diaktifkan",
+    "githubLoginSuccess": "Login GitHub berhasil",
+    "appleLoginSuccess": "Login Apple berhasil",
+    "passkeyLoginSuccess": "Autentikasi passkey berhasil",
+    "passwordResetEmailSent": "Email reset kata sandi telah dikirim",
+    "passwordResetSuccess": "Reset kata sandi berhasil",
+    "emailVerified": "Alamat email berhasil diverifikasi"
+  },
+  "user": {
+    "fetchSuccess": "Pengguna berhasil diambil",
+    "listSuccess": "Daftar pengguna berhasil diambil",
+    "createSuccess": "Pengguna berhasil dibuat",
+    "updateSuccess": "Pengguna berhasil diperbarui",
+    "deleteSuccess": "Pengguna berhasil dihapus",
+    "blockSuccess": "Pengguna berhasil diblokir",
+    "unblockSuccess": "Pengguna berhasil dibuka blokirnya",
+    "passwordChanged": "Kata sandi berhasil diubah",
+    "profileFetched": "Profil berhasil diambil",
+    "profileUpdated": "Profil berhasil diperbarui",
+    "notFound": "Pengguna tidak ditemukan",
+    "emailTaken": "Email sudah terdaftar",
+    "usernameTaken": "Nama pengguna sudah digunakan"
+  },
+  "mobile": {
+    "otpSent": "Kode verifikasi telah dikirim",
+    "verifySuccess": "Nomor ponsel berhasil diverifikasi",
+    "listSuccess": "Daftar nomor ponsel berhasil diambil",
+    "primaryUpdated": "Nomor ponsel utama berhasil diperbarui",
+    "deleteSuccess": "Nomor ponsel berhasil dihapus",
+    "alreadyVerified": "Nomor ini sudah diverifikasi oleh akun lain",
+    "invalidOTP": "Kode verifikasi tidak valid atau telah kedaluwarsa",
+    "maxAttempts": "Terlalu banyak percobaan salah. Silakan minta kode baru."
+  },
+  "appVersion": {
+    "checkSuccess": "Pemeriksaan versi selesai",
+    "upToDate": "Aplikasi Anda sudah terbaru",
+    "updateAvailable": "Versi baru tersedia",
+    "updateRequired": "Pembaruan diperlukan. Harap perbarui aplikasi untuk melanjutkan.",
+    "listSuccess": "Kebijakan versi berhasil diambil",
+    "upsertSuccess": "Kebijakan versi berhasil diperbarui"
+  },
+  "notification": {
+    "sendSuccess": "Notifikasi berhasil dikirim",
+    "listSuccess": "Notifikasi berhasil diambil",
+    "markReadSuccess": "Ditandai sebagai dibaca",
+    "markAllReadSuccess": "Semua notifikasi ditandai sebagai dibaca",
+    "prefsUpdated": "Preferensi notifikasi diperbarui",
+    "prefsFetched": "Preferensi notifikasi berhasil diambil",
+    "deviceRegistered": "Token perangkat terdaftar",
+    "deviceRemoved": "Token perangkat dihapus"
+  },
+  "health": {
+    "healthy": "Layanan berjalan normal",
+    "degraded": "Layanan mengalami gangguan",
+    "ready": "Layanan siap"
+  },
+  "email": {
+    "layout": {
+      "brandName": "Bread Boilerplate",
+      "footerCopyright": "© {year} Bread Boilerplate. Hak cipta dilindungi.",
+      "footerIgnore": "Jika Anda tidak meminta email ini, Anda dapat mengabaikannya."
+    },
+    "verifyEmail": {
+      "subject": "Verifikasi alamat email Anda",
+      "preview": "Verifikasi alamat email Anda, {name}",
+      "heading": "Verifikasi email Anda",
+      "greeting": "Halo {name}, terima kasih telah mendaftar!",
+      "body": "Harap verifikasi alamat email Anda untuk mengaktifkan akun. Klik tombol di bawah:",
+      "ctaLabel": "Verifikasi Alamat Email",
+      "copyLinkText": "Atau salin dan tempel tautan ini ke browser Anda:",
+      "expireNote": "Tautan ini kedaluwarsa dalam {expireHrs} jam.",
+      "ignoreNote": "Jika Anda tidak membuat akun, tidak ada tindakan yang diperlukan."
+    },
+    "resetPassword": {
+      "subject": "Atur ulang kata sandi Anda",
+      "preview": "Atur ulang kata sandi Anda, {name}",
+      "heading": "Atur ulang kata sandi Anda",
+      "greeting": "Halo {name},",
+      "body": "Kami menerima permintaan untuk mengatur ulang kata sandi akun Anda. Klik tombol di bawah untuk memilih kata sandi baru.",
+      "ctaLabel": "Atur Ulang Kata Sandi",
+      "copyLinkText": "Atau salin dan tempel tautan ini:",
+      "securityTitle": "⚠ Pemberitahuan keamanan",
+      "securityNote": "Tautan ini kedaluwarsa dalam {expireMins} menit. Permintaan berasal dari IP: {ipAddress}.",
+      "ignoreNote": "Jika Anda tidak meminta pengaturan ulang kata sandi, abaikan email ini. Kata sandi Anda tidak akan diubah."
+    },
+    "welcome": {
+      "subject": "Selamat datang di Bread Boilerplate 🎉",
+      "preview": "Selamat datang di Bread Boilerplate, {name}!",
+      "heading": "Selamat bergabung! 🎉",
+      "greeting": "Halo {name}!",
+      "subheading": "Akun Anda sudah siap. Berikut yang dapat Anda lakukan selanjutnya:",
+      "ctaPrimary": "Buka Dasbor",
+      "ctaSecondary": "Baca Dokumentasi",
+      "helpNote": "Butuh bantuan? Balas email ini atau periksa dokumentasi kami.",
+      "feat1Icon": "🔐",
+      "feat1Title": "Aman secara bawaan",
+      "feat1Desc": "Autentikasi JWT, 2FA, passkey",
+      "feat2Icon": "⚡",
+      "feat2Title": "Performa tinggi",
+      "feat2Desc": "Cache Redis, pekerjaan latar belakang",
+      "feat3Icon": "📊",
+      "feat3Title": "Siap analitik",
+      "feat3Desc": "Log audit & metrik bawaan"
+    },
+    "otpCode": {
+      "subject": "Kode {purpose} Anda: {code}",
+      "preview": "Kode {purpose} Anda: {code}",
+      "heading": "Kode verifikasi Anda",
+      "greeting": "Halo {name}, berikut kode {purpose} Anda:",
+      "expireNote": "Kode ini kedaluwarsa dalam {expireMins} menit.",
+      "warningTitle": "🔒 Jangan bagikan kode ini",
+      "warningBody": "Bread Boilerplate tidak akan pernah meminta kode Anda melalui telepon atau obrolan. Jika Anda tidak memintanya, segera amankan akun Anda."
+    },
+    "notification": {
+      "greeting": "Halo {name},"
+    }
+  }
+}

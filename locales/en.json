@@ -1,0 +1,187 @@
+{
+  "language": "en",
+  "http": {
+    "200": "Request successful",
+    "201": "Resource created",
+    "204": "No content",
+    "400": "Bad request",
+    "401": "Unauthorized",
+    "403": "Forbidden",
+    "404": "Not found",
+    "409": "Conflict",
+    "422": "Unprocessable entity",
+    "426": "Upgrade required",
+    "429": "Too many requests",
+    "500": "Internal server error"
+  },
+  "auth": {
+    "loginSuccess": "Login successful",
+    "logoutSuccess": "Logged out successfully",
+    "logoutAllSuccess": "Logged out from all devices",
+    "registerSuccess": "Registration successful",
+    "refreshSuccess": "Token refreshed",
+    "invalidCredentials": "Invalid email or password",
+    "accountLocked": "Account is temporarily locked. Try again later.",
+    "tokenExpired": "Token has expired",
+    "tokenInvalid": "Token is invalid",
+    "sessionRevoked": "Session has been revoked",
+    "emailNotVerified": "Please verify your email before logging in",
+    "twoFAEnabled": "Two-factor authentication enabled",
+    "twoFASetupInitiated": "2FA setup initiated. Scan the QR code with your authenticator app.",
+    "twoFAVerifySuccess": "Two-factor authentication verified and activated",
+    "githubLoginSuccess": "GitHub login successful",
+    "appleLoginSuccess": "Apple login successful",
+    "passkeyLoginSuccess": "Passkey authentication successful",
+    "passwordResetEmailSent": "Password reset email sent",
+    "passwordResetSuccess": "Password reset successful",
+    "emailVerified": "Email address verified"
+  },
+  "user": {
+    "fetchSuccess": "User fetched",
+    "listSuccess": "Users fetched",
+    "createSuccess": "User created",
+    "updateSuccess": "User updated",
+    "deleteSuccess": "User deleted",
+    "blockSuccess": "User blocked",
+    "unblockSuccess": "User unblocked",
+    "passwordChanged": "Password changed successfully",
+    "profileFetched": "Profile fetched",
+    "profileUpdated": "Profile updated",
+    "notFound": "User not found",
+    "emailTaken": "Email is already registered",
+    "usernameTaken": "Username is already taken"
+  },
+  "passkey": {
+    "registrationBegin": "Registration challenge ready",
+    "registrationSuccess": "Passkey registered successfully",
+    "loginBegin": "Login challenge ready",
+    "listSuccess": "Passkeys fetched",
+    "deleteSuccess": "Passkey removed",
+    "noPasskeys": "No passkeys registered for this account",
+    "ceremonyExpired": "Challenge has expired. Please start again.",
+    "invalidAttestation": "Passkey registration failed. Invalid attestation.",
+    "authFailed": "Passkey authentication failed"
+  },
+  "mobile": {
+    "otpSent": "Verification code sent",
+    "verifySuccess": "Mobile number verified",
+    "listSuccess": "Mobile numbers fetched",
+    "primaryUpdated": "Primary mobile number updated",
+    "deleteSuccess": "Mobile number removed",
+    "alreadyVerified": "This number is already verified by another account",
+    "invalidOTP": "Invalid or expired verification code",
+    "maxAttempts": "Too many incorrect attempts. Please request a new code."
+  },
+  "appVersion": {
+    "checkSuccess": "Version check complete",
+    "upToDate": "Your app is up to date",
+    "updateAvailable": "A new version is available",
+    "updateRequired": "A required update is available. Please update to continue.",
+    "listSuccess": "Version policies fetched",
+    "upsertSuccess": "Version policy updated"
+  },
+  "notification": {
+    "sendSuccess": "Notification sent",
+    "listSuccess": "Notifications fetched",
+    "markReadSuccess": "Marked as read",
+    "markAllReadSuccess": "All notifications marked as read",
+    "prefsUpdated": "Notification preferences updated",
+    "prefsFetched": "Notification preferences fetched",
+    "deviceRegistered": "Device token registered",
+    "deviceRemoved": "Device token removed"
+  },
+  "apiKey": {
+    "createSuccess": "API key created",
+    "listSuccess": "API keys fetched",
+    "revokeSuccess": "API key revoked",
+    "invalid": "Invalid or inactive API key",
+    "expired": "API key has expired"
+  },
+  "tenant": {
+    "createSuccess": "Tenant created",
+    "fetchSuccess": "Tenant fetched",
+    "notFound": "Tenant not found",
+    "suspended": "Tenant account is suspended",
+    "slugTaken": "Tenant slug is already taken",
+    "memberAdded": "Member added to tenant",
+    "memberRemoved": "Member removed from tenant"
+  },
+  "analytics": {
+    "fetchSuccess": "Data fetched"
+  },
+  "health": {
+    "healthy": "Service is healthy",
+    "degraded": "Service is degraded",
+    "ready": "Service is ready"
+  },
+  "validation": {
+    "required": "{{.Field}} is required",
+    "email": "{{.Field}} must be a valid email address",
+    "min": "{{.Field}} must be at least {{.Param}} characters",
+    "max": "{{.Field}} must not exceed {{.Param}} characters",
+    "alphanum": "{{.Field}} must contain only letters and numbers",
+    "e164": "{{.Field}} must be a valid phone number in E.164 format",
+    "oneof": "{{.Field}} must be one of: {{.Param}}"
+  },
+  "email": {
+    "layout": {
+      "brandName": "Bread Boilerplate",
+      "footerCopyright": "© {year} Bread Boilerplate. All rights reserved.",
+      "footerIgnore": "If you did not request this email, you can safely ignore it."
+    },
+    "verifyEmail": {
+      "subject": "Verify your email address",
+      "preview": "Verify your email address, {name}",
+      "heading": "Verify your email",
+      "greeting": "Hi {name}, thanks for signing up!",
+      "body": "Please verify your email address to activate your account. Click the button below:",
+      "ctaLabel": "Verify Email Address",
+      "copyLinkText": "Or copy and paste this link into your browser:",
+      "expireNote": "This link expires in {expireHrs} hours.",
+      "ignoreNote": "If you did not create an account, no action is required."
+    },
+    "resetPassword": {
+      "subject": "Reset your password",
+      "preview": "Reset your password, {name}",
+      "heading": "Reset your password",
+      "greeting": "Hi {name},",
+      "body": "We received a request to reset the password for your account. Click the button below to choose a new password.",
+      "ctaLabel": "Reset Password",
+      "copyLinkText": "Or copy and paste this link:",
+      "securityTitle": "⚠ Security notice",
+      "securityNote": "This link expires in {expireMins} minutes. Request originated from IP: {ipAddress}.",
+      "ignoreNote": "If you did not request a password reset, please ignore this email. Your password will not be changed."
+    },
+    "welcome": {
+      "subject": "Welcome to Bread Boilerplate 🎉",
+      "preview": "Welcome to Bread Boilerplate, {name}!",
+      "heading": "Welcome aboard! 🎉",
+      "greeting": "Hi {name}!",
+      "subheading": "Your account is ready. Here's what you can do next:",
+      "ctaPrimary": "Go to Dashboard",
+      "ctaSecondary": "Read the Docs",
+      "helpNote": "Need help? Reply to this email or check our documentation.",
+      "feat1Icon": "🔐",
+      "feat1Title": "Secure by default",
+      "feat1Desc": "JWT auth, 2FA, passkeys",
+      "feat2Icon": "⚡",
+      "feat2Title": "High performance",
+      "feat2Desc": "Redis caching, background jobs",
+      "feat3Icon": "📊",
+      "feat3Title": "Analytics ready",
+      "feat3Desc": "Built-in audit logs & metrics"
+    },
+    "otpCode": {
+      "subject": "Your {purpose} code: {code}",
+      "preview": "Your {purpose} code: {code}",
+      "heading": "Your verification code",
+      "greeting": "Hi {name}, here is your {purpose} code:",
+      "expireNote": "This code expires in {expireMins} minutes.",
+      "warningTitle": "🔒 Never share this code",
+      "warningBody": "Bread Boilerplate will never ask for your code via phone or chat. If you did not request this, please secure your account immediately."
+    },
+    "notification": {
+      "greeting": "Hi {name},"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+__GREETING__
+
+__CODE__
+
+__EXPIRE_NOTE__
+
+__WARNING_TITLE__
+__WARNING_BODY__
+
+__BRAND_NAME__
