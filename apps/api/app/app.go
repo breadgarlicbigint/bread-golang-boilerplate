@@ -38,7 +38,9 @@ import (
 	tenantSvc    "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/tenant/service"
 	userHdl      "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/handler"
 	userRepo     "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/repository"
+	roleHdl      "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/handler"
 	roleRepo     "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/repository"
+	roleSvc      "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/service"
 	userSvc      "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/service"
 	userentity   "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/entity"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/email"
@@ -117,7 +119,8 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	// ── Core modules ──────────────────────────────────────────────────────────
 	uRepo       := userRepo.New(mongo)
 	rRepo       := roleRepo.New(mongo)
-	uSvc        := userSvc.New(uRepo, hasher, cfg.Auth)
+	rSvc        := roleSvc.New(rRepo)
+	uSvc        := userSvc.New(uRepo, hasher, cfg.Auth, localMailer, cfg.App.URL, log)
 	apiKeySvc   := apikeySvc.New(mongo, hasher, cfg.APIKey.Prefix)
 	actSvc      := activitySvc.New(mongo)
 	authService := authSvc.New(uRepo, uSvc, rRepo, jwtMgr, hasher, rdb, *cfg, log, localMailer)
@@ -248,6 +251,9 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 
 	// User CRUD
 	userHdl.New(uSvc).RegisterRoutes(v1, authMw, adminMw)
+
+	// Roles (used to populate role-selection dropdowns, e.g. admin "create user" form)
+	roleHdl.New(rSvc).RegisterRoutes(v1, authMw, adminMw)
 
 	// Mobile verification
 	mobileHdl.New(mobileService).RegisterRoutes(v1, authMw)

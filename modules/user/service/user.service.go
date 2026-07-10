@@ -7,11 +7,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/dto"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/entity"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/email"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/pagination"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.uber.org/zap"
 )
 
 //go:generate mockgen -source=user.service.go -destination=../mocks/user.service.mock.go
@@ -31,16 +33,19 @@ type UserRepo interface {
 }
 
 type UserService struct {
-	repo   UserRepo
-	hasher *hash.Hasher
-	cfg    config.AuthConfig
+	repo        UserRepo
+	hasher      *hash.Hasher
+	cfg         config.AuthConfig
+	localMailer *email.LocalizedMailer
+	appURL      string
+	log         *zap.Logger
 }
 
-func New(repo UserRepo, hasher *hash.Hasher, cfg config.AuthConfig) *UserService {
-	return &UserService{repo: repo, hasher: hasher, cfg: cfg}
+func New(repo UserRepo, hasher *hash.Hasher, cfg config.AuthConfig, localMailer *email.LocalizedMailer, appURL string, log *zap.Logger) *UserService {
+	return &UserService{repo: repo, hasher: hasher, cfg: cfg, localMailer: localMailer, appURL: appURL, log: log}
 }
 
-func (s *UserService) Create(ctx context.Context, req dto.CreateUserRequest) (*entity.User, error) {
+func (s *UserService) Create(ctx context.Context, lang string, req dto.CreateUserRequest) (*entity.User, error) {
 	emailTaken, err := s.repo.ExistsByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
@@ -83,7 +88,23 @@ func (s *UserService) Create(ctx context.Context, req dto.CreateUserRequest) (*e
 	if err := s.repo.Create(ctx, u); err != nil {
 		return nil, err
 	}
+
+	s.sendWelcomeEmail(ctx, lang, u)
+
 	return u, nil
+}
+
+// sendWelcomeEmail best-effort notifies a newly created user — a failure here
+// must never roll back or fail the user creation itself.
+func (s *UserService) sendWelcomeEmail(ctx context.Context, lang string, u *entity.User) {
+	if s.localMailer == nil {
+		return
+	}
+	name := u.FirstName + " " + u.LastName
+	err := s.localMailer.SendWelcome(ctx, lang, u.Email, name, s.appURL+"/dashboard", s.appURL+"/docs")
+	if err != nil && s.log != nil {
+		s.log.Warn("user: welcome email failed", zap.String("userId", u.ID.String()), zap.Error(err))
+	}
 }
 
 func (s *UserService) GetByID(ctx context.Context, id string) (*entity.User, error) {

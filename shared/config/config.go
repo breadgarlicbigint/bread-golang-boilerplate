@@ -40,6 +40,7 @@ type AppConfig struct {
 	Debug    bool          `mapstructure:"APP_DEBUG"`
 	Timezone string        `mapstructure:"APP_TIMEZONE"`
 	Timeout  time.Duration `mapstructure:"APP_TIMEOUT"`
+	URL      string        `mapstructure:"APP_URL"` // frontend base URL used to build links in outbound emails
 }
 
 type MongoConfig struct {
@@ -168,6 +169,7 @@ func Load() (*Config, error) {
 	v.SetDefault("APP_DEBUG", true)
 	v.SetDefault("APP_TIMEZONE", "UTC")
 	v.SetDefault("APP_TIMEOUT", "30s")
+	v.SetDefault("APP_URL", "http://localhost:5173") // web/ test client — used to build links in outbound emails
 	v.SetDefault("MONGO_URI", "mongodb://localhost:27017")  // Docker overrides this via environment
 	v.SetDefault("MONGO_ID_TYPE", "uuid")                 // "uuid" or "objectid" — see docs/id-migration.md
 	v.SetDefault("MONGO_DB_NAME", "bread_boilerplate")
@@ -216,6 +218,7 @@ func Load() (*Config, error) {
 		Version: v.GetString("APP_VERSION"),
 		Debug:   v.GetBool("APP_DEBUG"),
 		Timezone: v.GetString("APP_TIMEZONE"),
+		URL:     v.GetString("APP_URL"),
 	}
 	cfg.Mongo = MongoConfig{
 		URI:     v.GetString("MONGO_URI"),

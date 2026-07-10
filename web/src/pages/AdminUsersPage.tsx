@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import * as usersApi from "../api/users";
+import * as rolesApi from "../api/roles";
 import { useApiAction } from "../hooks/useApiAction";
 import { RequestResult } from "../components/RequestResult";
 import { useToast } from "../context/ToastContext";
@@ -19,6 +20,7 @@ export function AdminUsersPage() {
   const deleteAction = useApiAction(usersApi.deleteUser);
   const blockAction = useApiAction(usersApi.blockUser);
   const unblockAction = useApiAction(usersApi.unblockUser);
+  const rolesAction = useApiAction(rolesApi.listRoles);
   const toast = useToast();
 
   const [page, setPage] = useState(1);
@@ -32,6 +34,11 @@ export function AdminUsersPage() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
+
+  useEffect(() => {
+    void rolesAction.run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -204,13 +211,24 @@ export function AdminUsersPage() {
           />
         </div>
         <div>
-          <label className="label">Role ID (UUID — see seeded roles)</label>
-          <input
+          <label className="label">Role</label>
+          <select
             className="input"
             required
             value={createForm.roleId}
             onChange={(e) => setCreateForm((f) => ({ ...f, roleId: e.target.value }))}
-          />
+            disabled={rolesAction.loading}
+          >
+            <option value="" disabled>
+              {rolesAction.loading ? "Loading roles…" : "Select a role…"}
+            </option>
+            {rolesAction.result?.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} ({r.slug})
+              </option>
+            ))}
+          </select>
+          <RequestResult loading={false} error={rolesAction.error} result={null} />
         </div>
         <button className="btn self-start" type="submit" disabled={createAction.loading}>
           Create

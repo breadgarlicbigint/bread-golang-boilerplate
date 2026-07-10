@@ -9,13 +9,14 @@ import (
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/pagination"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/validate"
+	pkgi18n "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/i18n"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/dto"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/entity"
 	usersvc "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/service"
 )
 
 type UserSvc interface {
-	Create(ctx context.Context, req dto.CreateUserRequest) (*entity.User, error)
+	Create(ctx context.Context, lang string, req dto.CreateUserRequest) (*entity.User, error)
 	GetByID(ctx context.Context, id string) (*entity.User, error)
 	List(ctx context.Context, q pagination.Query) ([]*entity.User, int64, error)
 	Update(ctx context.Context, id string, req dto.UpdateUserRequest) (*entity.User, error)
@@ -64,7 +65,8 @@ func (h *UserHandler) Create(c *gin.Context) {
 	if !validate.BindJSON(c, &req) {
 		return
 	}
-	u, err := h.svc.Create(c.Request.Context(), req)
+	_, lang := pkgi18n.FromContext(c)
+	u, err := h.svc.Create(c.Request.Context(), lang, req)
 	if err != nil {
 		handleError(c, err)
 		return

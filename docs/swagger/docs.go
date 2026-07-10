@@ -895,6 +895,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/roles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Used to populate role-selection dropdowns (e.g. admin \"create user\" form)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roles"
+                ],
+                "summary": "List all roles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_role_dto.RoleResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/users": {
             "get": {
                 "security": [
@@ -1511,6 +1551,36 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_role_dto.RoleResponse": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "slug": {
+                    "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_role_entity.RoleSlug"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_role_entity.RoleSlug": {
+            "type": "string",
+            "enum": [
+                "admin",
+                "user",
+                "member"
+            ],
+            "x-enum-varnames": [
+                "RoleAdmin",
+                "RoleUser",
+                "RoleMember"
+            ]
         },
         "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.BlockUserRequest": {
             "type": "object",
