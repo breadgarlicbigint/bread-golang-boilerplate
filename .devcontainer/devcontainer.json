@@ -4,14 +4,20 @@
   "service": "devcontainer",
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
-
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind",
+    "source=${localEnv:HOME}/.claude.json,target=/root/.claude.json,type=bind"
+  ],
   // ── Forwarded ports ────────────────────────────────────────────────────────
-  "forwardPorts": [3000, 5173, 6379, 27017],
+  "forwardPorts": [3000, 5173, 6379, 27017, 5672, 15672, 9094],
   "portsAttributes": {
-    "3000": { "label": "API Server",      "onAutoForward": "notify" },
+    "3000": { "label": "API Server", "onAutoForward": "notify" },
     "5173": { "label": "Web Test Client", "onAutoForward": "notify" },
-    "27017": { "label": "MongoDB",        "onAutoForward": "silent" },
-    "6379": { "label": "Redis",           "onAutoForward": "silent" }
+    "27017": { "label": "MongoDB", "onAutoForward": "silent" },
+    "6379": { "label": "Redis", "onAutoForward": "silent" },
+    "5672": { "label": "RabbitMQ (AMQP)", "onAutoForward": "silent" },
+    "15672": { "label": "RabbitMQ UI", "onAutoForward": "notify" },
+    "9094": { "label": "Kafka", "onAutoForward": "silent" }
   },
 
   // ── Lifecycle scripts ──────────────────────────────────────────────────────
@@ -73,9 +79,7 @@
 
         // Tailwind (for email templates)
         "tailwindCSS.includeLanguages": { "typescript": "javascript" },
-        "tailwindCSS.experimental.classRegex": [
-          "className=\"([^\"]*)\""
-        ],
+        "tailwindCSS.experimental.classRegex": ["className=\"([^\"]*)\""],
 
         // Terminal
         "terminal.integrated.defaultProfile.linux": "bash",

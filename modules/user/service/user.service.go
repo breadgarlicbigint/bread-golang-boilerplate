@@ -32,17 +32,25 @@ type UserRepo interface {
 	ResetPasswordAttempts(ctx context.Context, id uuid.UUID) error
 }
 
+// EmailQueue enqueues a pre-rendered email for the background worker to deliver.
+// *worker.Client satisfies this; keeping it an interface avoids importing asynq
+// into the service and lets tests pass a fake.
+type EmailQueue interface {
+	EnqueueEmail(to, subject, html, text string) error
+}
+
 type UserService struct {
 	repo        UserRepo
 	hasher      *hash.Hasher
 	cfg         config.AuthConfig
 	localMailer *email.LocalizedMailer
+	emailQueue  EmailQueue
 	appURL      string
 	log         *zap.Logger
 }
 
-func New(repo UserRepo, hasher *hash.Hasher, cfg config.AuthConfig, localMailer *email.LocalizedMailer, appURL string, log *zap.Logger) *UserService {
-	return &UserService{repo: repo, hasher: hasher, cfg: cfg, localMailer: localMailer, appURL: appURL, log: log}
+func New(repo UserRepo, hasher *hash.Hasher, cfg config.AuthConfig, localMailer *email.LocalizedMailer, emailQueue EmailQueue, appURL string, log *zap.Logger) *UserService {
+	return &UserService{repo: repo, hasher: hasher, cfg: cfg, localMailer: localMailer, emailQueue: emailQueue, appURL: appURL, log: log}
 }
 
 func (s *UserService) Create(ctx context.Context, lang string, req dto.CreateUserRequest) (*entity.User, error) {
@@ -94,16 +102,26 @@ func (s *UserService) Create(ctx context.Context, lang string, req dto.CreateUse
 	return u, nil
 }
 
-// sendWelcomeEmail best-effort notifies a newly created user — a failure here
-// must never roll back or fail the user creation itself.
-func (s *UserService) sendWelcomeEmail(ctx context.Context, lang string, u *entity.User) {
-	if s.localMailer == nil {
-		return
+// sendWelcomeEmail renders the localized welcome email and hands it off to the
+// background worker queue for delivery. Rendering happens here (fast, in-memory,
+// and where the request's lang is known); the retryable network send is done by
+// the worker process. Best-effort — a failure here must never roll back or fail
+// the user creation itself.
+func (s *UserService) sendWelcomeEmail(_ context.Context, lang string, u *entity.User) {
+	if s.localMailer == nil || s.emailQueue == nil {
+		return // email or worker queue not configured — skip silently
 	}
 	name := u.FirstName + " " + u.LastName
-	err := s.localMailer.SendWelcome(ctx, lang, u.Email, name, s.appURL+"/dashboard", s.appURL+"/docs")
-	if err != nil && s.log != nil {
-		s.log.Warn("user: welcome email failed", zap.String("userId", u.ID.String()), zap.Error(err))
+	rendered, err := s.localMailer.RenderWelcome(lang, name, s.appURL+"/dashboard", s.appURL+"/docs")
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("user: render welcome email failed", zap.String("userId", u.ID.String()), zap.Error(err))
+		}
+		return
+	}
+	subject := s.localMailer.SubjectWelcome(lang, name)
+	if err := s.emailQueue.EnqueueEmail(u.Email, subject, rendered.HTML, rendered.Text); err != nil && s.log != nil {
+		s.log.Warn("user: enqueue welcome email failed", zap.String("userId", u.ID.String()), zap.Error(err))
 	}
 }
 

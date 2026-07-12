@@ -1,6 +1,9 @@
 .PHONY: all build run dev test test-unit test-integration test-e2e test-coverage \
-        lint fmt vet tidy mod-sync ensure-modules \
+        lint fmt vet tidy mod-sync ensure-modules deps \
+        build-worker build-worker-rabbitmq build-worker-kafka \
+        run-worker run-worker-rabbitmq run-worker-kafka \
         docker-up docker-down docker-logs docker-rebuild \
+        docker-worker docker-rabbitmq docker-kafka \
         migrate-indexes migrate-indexes-local seed seed-local generate-keys swagger generate \
         build-emails web-install web-dev setup clean help
 
@@ -21,15 +24,31 @@ build: ensure-modules
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) $(CMD_API)
 
 build-worker:
-	@echo "▶ Building $(WORKER) $(VERSION)"
+	@echo "▶ Building $(WORKER) (Redis/Asynq) $(VERSION)"
 	@mkdir -p $(BUILD_DIR)
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BUILD_DIR)/$(WORKER) $(CMD_WORKER)
+
+build-worker-rabbitmq:
+	@echo "▶ Building worker-rabbitmq $(VERSION)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BUILD_DIR)/worker-rabbitmq ./apps/worker-rabbitmq
+
+build-worker-kafka:
+	@echo "▶ Building worker-kafka $(VERSION)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BUILD_DIR)/worker-kafka ./apps/worker-kafka
 
 run: ensure-modules build
 	@$(BUILD_DIR)/$(BINARY)
 
 run-worker: build-worker
 	@$(BUILD_DIR)/$(WORKER)
+
+run-worker-rabbitmq: build-worker-rabbitmq
+	@$(BUILD_DIR)/worker-rabbitmq
+
+run-worker-kafka: build-worker-kafka
+	@$(BUILD_DIR)/worker-kafka
 
 dev: ensure-modules
 	@echo "▶ Starting hot-reload server (air)"
@@ -56,6 +75,19 @@ tidy:
 
 mod-sync: tidy
 	@echo "▶ go.sum is up to date"
+
+# deps: import/refresh the queue-driver client libraries (the RabbitMQ + Kafka
+# "import command"). Pure-Go clients (no CGO) so builds stay CGO_ENABLED=0.
+# Run after a fresh clone if go.sum is missing these, or to bump versions.
+RABBITMQ_LIB := github.com/rabbitmq/amqp091-go@v1.10.0
+KAFKA_LIB    := github.com/segmentio/kafka-go@v0.4.47
+
+deps:
+	@echo "▶ Importing queue driver dependencies (RabbitMQ + Kafka)"
+	go get $(RABBITMQ_LIB)
+	go get $(KAFKA_LIB)
+	@$(MAKE) mod-sync
+	@echo "✅  RabbitMQ + Kafka client libraries imported and go.sum synced"
 
 # ── Test ──────────────────────────────────────────────────────────────────────
 test:
@@ -108,11 +140,21 @@ docker-up: mod-sync
 	@echo "  Run 'make seed' to populate initial data (requires stack to be running)."
 
 docker-worker: mod-sync
-	@echo "▶ Starting full stack + worker"
+	@echo "▶ Starting full stack + Redis/Asynq worker"
 	docker compose --profile worker up -d --build
 
+docker-rabbitmq: mod-sync
+	@echo "▶ Starting full stack + RabbitMQ broker + RabbitMQ worker"
+	docker compose --profile rabbitmq up -d --build
+	@echo "  ✅  RabbitMQ UI → http://localhost:15672 (guest/guest)"
+
+docker-kafka: mod-sync
+	@echo "▶ Starting full stack + Kafka broker + Kafka worker"
+	docker compose --profile kafka up -d --build
+	@echo "  ✅  Kafka broker → localhost:9094 (host) / kafka:9092 (in-network)"
+
 docker-down:
-	docker compose --profile worker down
+	docker compose --profile worker --profile rabbitmq --profile kafka down
 
 docker-stop:
 	docker compose stop
@@ -127,7 +169,7 @@ docker-rebuild:
 	docker compose up -d --build --force-recreate app
 
 docker-clean:
-	docker compose down -v --remove-orphans
+	docker compose --profile worker --profile rabbitmq --profile kafka down -v --remove-orphans
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # ── Database (Docker-aware) ───────────────────────────────────────────────────
@@ -277,7 +319,10 @@ help:
 	@echo "  Development"
 	@echo "    make dev             Hot reload with air"
 	@echo "    make run             Build and run API server"
-	@echo "    make run-worker      Build and run background worker"
+	@echo "    make run-worker          Build and run Redis/Asynq worker"
+	@echo "    make run-worker-rabbitmq Build and run RabbitMQ worker"
+	@echo "    make run-worker-kafka    Build and run Kafka worker"
+	@echo "    make deps            Import RabbitMQ + Kafka client libs (go get + tidy)"
 	@echo "    make swagger         Regenerate Swagger docs"
 	@echo ""
 	@echo "  Web test client"
@@ -286,7 +331,9 @@ help:
 	@echo ""
 	@echo "  Docker"
 	@echo "    make docker-up       Start API + MongoDB rs + Redis"
-	@echo "    make docker-worker   Start full stack including Asynq worker"
+	@echo "    make docker-worker   Start full stack + Redis/Asynq worker"
+	@echo "    make docker-rabbitmq Start full stack + RabbitMQ broker + worker"
+	@echo "    make docker-kafka    Start full stack + Kafka broker + worker"
 	@echo "    make docker-down     Stop and remove all containers"
 	@echo "    make docker-logs     Tail app logs"
 	@echo "    make docker-rebuild  Rebuild and restart only the app container"

@@ -99,6 +99,51 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/admin/notifications/test-email": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin diagnostic endpoint — sends a minimal message through whichever mail transport is configured (SES or SMTP) and reports the raw result (including connection/auth errors), so email delivery can be debugged without creating a real user.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "summary": "Send a test email to verify MAIL_DRIVER configuration",
+                "parameters": [
+                    {
+                        "description": "Recipient address",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_notification_dto.TestEmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_notification_dto.TestEmailResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/app-version/check": {
             "get": {
                 "produces": [
@@ -1487,6 +1532,28 @@ const docTemplate = `{
                 },
                 "verifiedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_notification_dto.TestEmailRequest": {
+            "type": "object",
+            "required": [
+                "to"
+            ],
+            "properties": {
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_notification_dto.TestEmailResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "sent": {
+                    "type": "boolean"
                 }
             }
         },

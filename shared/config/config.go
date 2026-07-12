@@ -30,6 +30,9 @@ type Config struct {
 	Notification NotificationConfig
 	Sentry       SentryConfig
 	Worker       WorkerConfig
+	Queue        QueueConfig
+	RabbitMQ     RabbitMQConfig
+	Kafka        KafkaConfig
 }
 
 type AppConfig struct {
@@ -143,6 +146,34 @@ type WorkerConfig struct {
 	Queues      string `mapstructure:"WORKER_QUEUES"`
 }
 
+// QueueConfig selects which transport the API enqueues background jobs onto.
+// It MUST match the worker that is actually running:
+//
+//	redis    → apps/worker          (Redis/Asynq)   — default
+//	rabbitmq → apps/worker-rabbitmq  (pkg/queue/rabbitmq)
+//	kafka    → apps/worker-kafka     (pkg/queue/kafka)
+//
+// A mismatch (e.g. QUEUE_DRIVER=redis while only the RabbitMQ worker runs)
+// means jobs are published to a broker nobody consumes, so they never run.
+type QueueConfig struct {
+	Driver string `mapstructure:"QUEUE_DRIVER"` // redis | rabbitmq | kafka
+}
+
+// RabbitMQConfig configures the AMQP queue-job/worker backend (pkg/queue/rabbitmq).
+type RabbitMQConfig struct {
+	URL      string `mapstructure:"RABBITMQ_URL"`      // amqp://user:pass@host:5672/
+	Exchange string `mapstructure:"RABBITMQ_EXCHANGE"` // durable direct exchange for jobs
+	Queue    string `mapstructure:"RABBITMQ_QUEUE"`    // durable work queue the worker consumes
+	Prefetch int    `mapstructure:"RABBITMQ_PREFETCH"` // unacked messages in flight / worker concurrency
+}
+
+// KafkaConfig configures the Kafka queue-job/worker backend (pkg/queue/kafka).
+type KafkaConfig struct {
+	Brokers string `mapstructure:"KAFKA_BROKERS"`  // comma-separated host:port list
+	Topic   string `mapstructure:"KAFKA_TOPIC"`    // topic jobs are produced to / consumed from
+	GroupID string `mapstructure:"KAFKA_GROUP_ID"` // consumer group id for the worker
+}
+
 func Load() (*Config, error) {
 	v := viper.New()
 
@@ -192,6 +223,16 @@ func Load() (*Config, error) {
 	v.SetDefault("SMTP_PORT", "587")
 	v.SetDefault("WORKER_CONCURRENCY", 10)
 	v.SetDefault("WORKER_QUEUES", "default:6,critical:3,low:1")
+	v.SetDefault("QUEUE_DRIVER", "redis") // redis | rabbitmq | kafka
+	// RabbitMQ (pkg/queue/rabbitmq)
+	v.SetDefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+	v.SetDefault("RABBITMQ_EXCHANGE", "bread.tasks")
+	v.SetDefault("RABBITMQ_QUEUE", "bread.worker")
+	v.SetDefault("RABBITMQ_PREFETCH", 10)
+	// Kafka (pkg/queue/kafka)
+	v.SetDefault("KAFKA_BROKERS", "localhost:9092")
+	v.SetDefault("KAFKA_TOPIC", "bread.tasks")
+	v.SetDefault("KAFKA_GROUP_ID", "bread.worker")
 	v.SetDefault("GITHUB_REDIRECT_URL", "http://localhost:3000/v1/auth/github/callback")
 	v.SetDefault("WEBAUTHN_RP_ID", "localhost")
 	v.SetDefault("WEBAUTHN_RP_ORIGIN", "http://localhost:3000")
@@ -299,6 +340,20 @@ func Load() (*Config, error) {
 	cfg.Worker = WorkerConfig{
 		Concurrency: v.GetInt("WORKER_CONCURRENCY"),
 		Queues:      v.GetString("WORKER_QUEUES"),
+	}
+	cfg.Queue = QueueConfig{
+		Driver: v.GetString("QUEUE_DRIVER"),
+	}
+	cfg.RabbitMQ = RabbitMQConfig{
+		URL:      v.GetString("RABBITMQ_URL"),
+		Exchange: v.GetString("RABBITMQ_EXCHANGE"),
+		Queue:    v.GetString("RABBITMQ_QUEUE"),
+		Prefetch: v.GetInt("RABBITMQ_PREFETCH"),
+	}
+	cfg.Kafka = KafkaConfig{
+		Brokers: v.GetString("KAFKA_BROKERS"),
+		Topic:   v.GetString("KAFKA_TOPIC"),
+		GroupID: v.GetString("KAFKA_GROUP_ID"),
 	}
 	cfg.GitHub = GitHubConfig{
 		ClientID:     v.GetString("GITHUB_CLIENT_ID"),

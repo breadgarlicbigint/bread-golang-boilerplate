@@ -5,15 +5,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/auth/dto"
 	authSvc "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/auth/service"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/entity"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
 	jwtpkg "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/jwt"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -41,19 +40,19 @@ func (r *fakeUserRepo) FindByGoogleID(_ context.Context, _ string) (*entity.User
 }
 
 func (r *fakeUserRepo) Create(_ context.Context, u *entity.User) error {
-	u.ID = primitive.NewObjectID()
+	u.ID = uuid.New()
 	r.users[u.Email] = u
 	return nil
 }
 
-func (r *fakeUserRepo) Update(_ context.Context, _ primitive.ObjectID, _ bson.M) error {
+func (r *fakeUserRepo) Update(_ context.Context, _ uuid.UUID, _ bson.M) error {
 	return nil
 }
 
 type fakeUserSvc struct{}
 
 func (s *fakeUserSvc) HandleFailedLogin(_ context.Context, _ *entity.User) error { return nil }
-func (s *fakeUserSvc) RecordLogin(_ context.Context, _ primitive.ObjectID, _ string) error {
+func (s *fakeUserSvc) RecordLogin(_ context.Context, _ uuid.UUID, _ string) error {
 	return nil
 }
 
@@ -101,7 +100,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 
 	repo := newFakeUserRepo()
 	repo.users["test@example.com"] = &entity.User{
-		ID:           primitive.NewObjectID(),
+		ID:           uuid.New(),
 		Email:        "test@example.com",
 		PasswordHash: pw,
 		Status:       entity.UserStatusActive,
@@ -129,7 +128,7 @@ func TestJWT_IssueAndParse(t *testing.T) {
 		t.Fatal("jwt init:", err)
 	}
 
-	userID := primitive.NewObjectID().String()
+	userID := uuid.New().String()
 	sessionID := "test-session-123"
 	role := "admin"
 

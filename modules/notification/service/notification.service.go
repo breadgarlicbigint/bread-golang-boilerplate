@@ -353,6 +353,26 @@ func (s *NotificationService) sendEmail(ctx context.Context, userID uuid.UUID, n
 	})
 }
 
+// SendTestEmail sends a minimal message directly through the configured mail
+// transport (SES or SMTP, whichever MAIL_DRIVER selects) and returns the raw
+// error unwrapped. It exists purely as an admin diagnostic — every other
+// email call site in this codebase treats a nil mailer / send failure as
+// "skip silently", which is the right behavior for real user flows but makes
+// it impossible to tell whether MAIL_DRIVER is actually working. This is the
+// one path that reports the real reason (connection refused, auth failure, …)
+// back to the caller.
+func (s *NotificationService) SendTestEmail(ctx context.Context, to string) error {
+	if s.mailer == nil {
+		return fmt.Errorf("mail driver not configured — check MAIL_DRIVER and its credentials in .env")
+	}
+	return s.mailer.Send(ctx, email.Message{
+		To:      []string{to},
+		Subject: "Bread Boilerplate — test email",
+		HTML:    "<p>This is a test email from the admin test-email endpoint. If you received this, your MAIL_DRIVER configuration is working.</p>",
+		Text:    "This is a test email from the admin test-email endpoint. If you received this, your MAIL_DRIVER configuration is working.",
+	})
+}
+
 func (s *NotificationService) isChannelEnabled(ctx context.Context, userID uuid.UUID, t notifEntity.NotifType, ch notifEntity.NotifChannel) bool {
 	prefs, err := s.GetPreferences(ctx, userID)
 	if err != nil {

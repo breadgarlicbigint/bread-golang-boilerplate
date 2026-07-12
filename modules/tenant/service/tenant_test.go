@@ -3,7 +3,7 @@ package service_test
 import (
 	"testing"
 
-	svc "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/appversion/service"
+	svc "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/tenant/service"
 	tenantEntity "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/tenant/entity"
 )
 

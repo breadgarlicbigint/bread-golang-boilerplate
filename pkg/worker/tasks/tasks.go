@@ -38,6 +38,7 @@ func (h *EmailTaskHandler) Handle(ctx context.Context, t *asynq.Task) error {
 		To:      []string{p.To},
 		Subject: p.Subject,
 		HTML:    p.Body,
+		Text:    p.Text,
 	}); err != nil {
 		h.log.Error("email send failed", zap.String("to", p.To), zap.Error(err))
 		return err

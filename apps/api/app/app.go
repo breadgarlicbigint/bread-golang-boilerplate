@@ -50,16 +50,29 @@ import (
 	ginSwagger   "github.com/swaggo/gin-swagger"
 	jwtpkg       "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/jwt"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/sms"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/worker"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/queue/kafka"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/queue/rabbitmq"
 )
+
+// queueBackend is the subset of a queue transport the API needs: enqueue jobs
+// and close on shutdown. *worker.Client (Redis/Asynq), *rabbitmq.Publisher and
+// *kafka.Publisher all satisfy it, so QUEUE_DRIVER can swap the backend without
+// touching any caller (services depend on the smaller EmailQueue interface).
+type queueBackend interface {
+	EnqueueEmail(to, subject, html, text string) error
+	Close() error
+}
 
 // App holds all wired-up dependencies and the HTTP server.
 type App struct {
-	cfg    *config.Config
-	log    *zap.Logger
-	mongo  *database.MongoDB
-	rdb    *redis.Client
-	engine *gin.Engine
-	server *http.Server
+	cfg        *config.Config
+	log        *zap.Logger
+	mongo      *database.MongoDB
+	rdb        *redis.Client
+	engine     *gin.Engine
+	server     *http.Server
+	jobQueue   queueBackend
 }
 
 // New wires all modules and returns a ready-to-start App.
@@ -116,11 +129,18 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 		localMailer = email.NewLocalizedMailer(mailer, translator)
 	}
 
+	// ── Background job queue (QUEUE_DRIVER: redis | rabbitmq | kafka) ───────────
+	// The API only enqueues jobs; a separate worker process consumes them.
+	// Emails are rendered here (fast) and their retryable delivery is handed off
+	// via jobQueue.EnqueueEmail. The publisher MUST match the running worker —
+	// QUEUE_DRIVER selects it. See apps/worker, apps/worker-rabbitmq, apps/worker-kafka.
+	jobQueue := buildJobQueue(cfg, log)
+
 	// ── Core modules ──────────────────────────────────────────────────────────
 	uRepo       := userRepo.New(mongo)
 	rRepo       := roleRepo.New(mongo)
 	rSvc        := roleSvc.New(rRepo)
-	uSvc        := userSvc.New(uRepo, hasher, cfg.Auth, localMailer, cfg.App.URL, log)
+	uSvc        := userSvc.New(uRepo, hasher, cfg.Auth, localMailer, jobQueue, cfg.App.URL, log)
 	apiKeySvc   := apikeySvc.New(mongo, hasher, cfg.APIKey.Prefix)
 	actSvc      := activitySvc.New(mongo)
 	authService := authSvc.New(uRepo, uSvc, rRepo, jwtMgr, hasher, rdb, *cfg, log, localMailer)
@@ -269,11 +289,12 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	analyticsHdl.New(analyticsService, rdb, cfg.Auth.MaxPasswordAttempts).RegisterRoutes(adminV1)
 
 	app := &App{
-		cfg:    cfg,
-		log:    log,
-		mongo:  mongo,
-		rdb:    rdb,
-		engine: engine,
+		cfg:      cfg,
+		log:      log,
+		mongo:    mongo,
+		rdb:      rdb,
+		engine:   engine,
+		jobQueue: jobQueue,
 		server: &http.Server{
 			Addr:         ":" + cfg.App.Port,
 			Handler:      engine,
@@ -283,6 +304,52 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 		},
 	}
 	return app, nil
+}
+
+// buildJobQueue constructs the enqueue-side publisher selected by QUEUE_DRIVER.
+// It must line up with the worker process that is actually running:
+//
+//	redis (default) → apps/worker           (Redis/Asynq)
+//	rabbitmq        → apps/worker-rabbitmq
+//	kafka           → apps/worker-kafka
+//
+// Redis client creation is lazy (never errors). RabbitMQ/Kafka dial eagerly; a
+// connection failure is logged and returns a nil queue — every caller treats a
+// nil queue as "background jobs disabled" (emails are skipped, not lost to a
+// crash), matching the nil-mailer convention.
+//
+// NOTE: QUEUE_DRIVER is read once at startup. Changing it in .env requires a
+// full process restart — under `make dev` (air) a .env-only change does NOT
+// rebuild (exclude_unchanged), so restart air after switching drivers.
+func buildJobQueue(cfg *config.Config, log *zap.Logger) queueBackend {
+	switch cfg.Queue.Driver {
+	case "rabbitmq":
+		pub, err := rabbitmq.NewPublisher(cfg.RabbitMQ)
+		if err != nil {
+			log.Error("queue: rabbitmq publisher init failed — background jobs disabled", zap.Error(err))
+			return nil
+		}
+		log.Info("queue: publishing via rabbitmq", zap.String("exchange", cfg.RabbitMQ.Exchange))
+		return pub
+	case "kafka":
+		pub, err := kafka.NewPublisher(cfg.Kafka)
+		if err != nil {
+			log.Error("queue: kafka publisher init failed — background jobs disabled", zap.Error(err))
+			return nil
+		}
+		log.Info("queue: publishing via kafka", zap.String("topic", cfg.Kafka.Topic))
+		return pub
+	case "redis", "":
+		log.Info("queue: publishing via redis/asynq")
+		return worker.NewClient(
+			fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+			cfg.Redis.Password, cfg.Redis.DB,
+		)
+	default:
+		log.Error("queue: unknown QUEUE_DRIVER — background jobs disabled",
+			zap.String("driver", cfg.Queue.Driver))
+		return nil
+	}
 }
 
 func (a *App) Start() error {
@@ -300,6 +367,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return err
 	}
 	_ = a.mongo.Disconnect(ctx)
+	if a.jobQueue != nil {
+		_ = a.jobQueue.Close()
+	}
 	_ = a.rdb.Close()
 	sentry.Flush(2 * time.Second)
 	return nil

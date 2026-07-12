@@ -15,7 +15,7 @@ A production-ready **Go** REST API boilerplate inspired by [ack-nestjs-boilerpla
 | Auth tokens | JWT ES256 / ES512 | **golang-jwt** ES256 / ES512 |
 | Password hashing | bcrypt | **bcrypt** (golang.org/x/crypto) |
 | 2FA | TOTP (speakeasy) | **pquerna/otp** |
-| Background jobs | BullMQ | **asynq** (Redis-backed) |
+| Background jobs | BullMQ | **asynq** (Redis, default) — or **RabbitMQ** / **Kafka** via `QUEUE_DRIVER` |
 | Config | @nestjs/config | **viper** |
 | Validation | class-validator | **go-playground/validator** |
 | Logging | Winston | **zap** (Uber) |
@@ -56,7 +56,7 @@ A production-ready **Go** REST API boilerplate inspired by [ack-nestjs-boilerpla
 - **Soft deletes** on users
 
 ### ⚡ Performance
-- **Asynq** background job queue (email, push, cleanup tasks)
+- Background job queue (email, push, cleanup tasks) — **Redis/Asynq** by default, swappable for **RabbitMQ** or **Kafka** via `QUEUE_DRIVER` (see "Background Job Queue Backends" below)
 - Response **gzip compression**
 - **Cursor + offset** pagination with metadata
 - Per-collection MongoDB indexes
@@ -114,7 +114,11 @@ bread-golang-boilerplate/
 │   ├── logger/                 # Zap factory
 │   ├── email/                  # AWS SES mailer
 │   ├── storage/                # AWS S3 client
-│   └── worker/                 # Asynq client + server + task handlers
+│   ├── worker/                 # Asynq (Redis) client + server + task handlers
+│   └── queue/                  # Backend-agnostic Publisher/Consumer contract
+│       ├── rabbitmq/           # RabbitMQ (AMQP) implementation
+│       ├── kafka/               # Kafka implementation
+│       └── tasks/               # Shared handlers for the RabbitMQ/Kafka workers
 ├── scripts/
 │   ├── seed/                   # Seed roles, users, feature flags
 │   └── migrate/                # Create MongoDB indexes
@@ -445,6 +449,41 @@ PUT  /v1/admin/app-versions/:platform   → update policy (admin)
 
 Platforms: `ios` | `android` | `web`  
 Status values: `up_to_date` | `available` | `required`
+
+---
+
+### 9. Background Job Queue Backends (Redis / RabbitMQ / Kafka)
+
+Background jobs run on one of three interchangeable transports, selected by
+`QUEUE_DRIVER` in `.env`. All three expose the same enqueue-side contract
+(`EnqueueEmail`), so switching backends never requires touching the code that
+enqueues a job — only which worker process you run.
+
+| `QUEUE_DRIVER` | Worker | Start with |
+|---|---|---|
+| `redis` (default) | `apps/worker` (Asynq) | `make docker-worker` / `make run-worker` |
+| `rabbitmq` | `apps/worker-rabbitmq` | `make docker-rabbitmq` / `make run-worker-rabbitmq` |
+| `kafka` | `apps/worker-kafka` | `make docker-kafka` / `make run-worker-kafka` |
+
+**`QUEUE_DRIVER` must match the worker you start** — the API only publishes
+jobs, it never consumes them. A mismatch means jobs queue up on a broker
+nobody is listening to, with no error raised.
+
+```bash
+# RabbitMQ — management UI at http://localhost:15672 (guest/guest)
+make docker-rabbitmq
+
+# Kafka — broker reachable at localhost:9094 from the host, kafka:9092 in-network
+make docker-kafka
+
+# First time using RabbitMQ/Kafka? Pull in their pure-Go client libraries:
+make deps
+```
+
+`pkg/queue` defines the transport-neutral `Publisher`/`Consumer` contract that
+`pkg/queue/rabbitmq` and `pkg/queue/kafka` implement, mirroring `pkg/worker`'s
+Asynq client/server shape. Task handlers in `pkg/queue/tasks` are shared
+unchanged by both `apps/worker-rabbitmq` and `apps/worker-kafka`.
 
 ---
 

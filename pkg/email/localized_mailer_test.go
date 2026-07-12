@@ -3,12 +3,18 @@ package email_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/email"
 	pkgi18n "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/i18n"
 )
+
+// unreplacedTokenRE matches our __TOKEN__ convention (uppercase, digits,
+// underscores only) — it must not match unrelated library-internal markup
+// such as @react-email/components' `data-id="__react-email-column"`.
+var unreplacedTokenRE = regexp.MustCompile(`__[A-Z0-9_]+__`)
 
 // findLocalesDir walks up from the test file to locate the locales directory.
 func findLocalesDir(t *testing.T) string {
@@ -225,7 +231,7 @@ func TestLocalizedMailer_AllLanguages_NoUnreplacedTokens(t *testing.T) {
 func assertNoUnreplacedTokens(t *testing.T, label, content string) {
 	t.Helper()
 	for _, line := range strings.Split(content, "\n") {
-		if strings.Contains(line, "__") {
+		if unreplacedTokenRE.MatchString(line) {
 			t.Errorf("%s: unreplaced token in: %s", label, strings.TrimSpace(line))
 		}
 	}

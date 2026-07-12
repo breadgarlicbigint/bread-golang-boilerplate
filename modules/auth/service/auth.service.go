@@ -29,6 +29,7 @@ const (
 type UserRepo interface {
 	FindByEmail(ctx context.Context, email string) (*entity.User, error)
 	FindByGoogleID(ctx context.Context, googleID string) (*entity.User, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	Create(ctx context.Context, u *entity.User) error
 	Update(ctx context.Context, id uuid.UUID, fields bson.M) error
 }
@@ -133,7 +134,11 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*dto.Lo
 	if err != nil || !ok {
 		return nil, errors.ErrSessionRevoked
 	}
-	u, err := s.userRepo.FindByEmail(ctx, claims.UserID)
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, errors.ErrUserNotFound
+	}
+	u, err := s.userRepo.FindByID(ctx, uid)
 	if err != nil || u == nil {
 		return nil, errors.ErrUserNotFound
 	}

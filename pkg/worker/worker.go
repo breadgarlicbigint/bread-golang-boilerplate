@@ -22,7 +22,8 @@ const (
 type SendEmailPayload struct {
 	To      string `json:"to"`
 	Subject string `json:"subject"`
-	Body    string `json:"body"`
+	Body    string `json:"body"`           // HTML body
+	Text    string `json:"text,omitempty"` // optional plain-text alternative
 }
 
 type PushNotifPayload struct {
@@ -55,6 +56,23 @@ func (c *Client) Enqueue(taskType string, payload interface{}, opts ...asynq.Opt
 	task := asynq.NewTask(taskType, b, opts...)
 	_, err = c.client.Enqueue(task)
 	return err
+}
+
+// EnqueueEmail queues a pre-rendered email for the background worker to deliver.
+// The caller renders the subject/HTML/text (e.g. via email.LocalizedMailer) so
+// the worker only performs the retryable network send. Failed sends are retried
+// by asynq up to MaxRetry times on the "default" queue.
+//
+// Defining this convenience method here lets callers depend on a small
+// domain-specific interface (EnqueueEmail) instead of importing asynq to
+// construct task types and options themselves.
+func (c *Client) EnqueueEmail(to, subject, html, text string) error {
+	return c.Enqueue(
+		TaskSendEmail,
+		SendEmailPayload{To: to, Subject: subject, Body: html, Text: text},
+		asynq.MaxRetry(5),
+		asynq.Queue("default"),
+	)
 }
 
 func (c *Client) Close() error { return c.client.Close() }

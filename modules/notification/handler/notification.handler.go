@@ -25,6 +25,7 @@ type NotifSvc interface {
 	RemoveDevice(ctx context.Context, userID uuid.UUID, token string) error
 	GetPreferences(ctx context.Context, userID uuid.UUID) (*notifEntity.NotificationPreferences, error)
 	UpdatePreferences(ctx context.Context, userID uuid.UUID, req notifDTO.UpdatePreferencesRequest) error
+	SendTestEmail(ctx context.Context, to string) error
 }
 
 type NotificationHandler struct {
@@ -48,8 +49,9 @@ func (h *NotificationHandler) RegisterRoutes(rg *gin.RouterGroup, authMw gin.Han
 	me.DELETE("/devices/:token", h.RemoveDevice)
 
 	admin := rg.Group("/admin/notifications", authMw, adminMw)
-	admin.POST("/send",      h.AdminSend)
-	admin.POST("/broadcast", h.Broadcast)
+	admin.POST("/send",       h.AdminSend)
+	admin.POST("/broadcast",  h.Broadcast)
+	admin.POST("/test-email", h.TestEmail)
 }
 
 func (h *NotificationHandler) List(c *gin.Context) {
@@ -167,6 +169,29 @@ func (h *NotificationHandler) Broadcast(c *gin.Context) {
 		return
 	}
 	response.OK(c, "Broadcast complete", gin.H{"success": success, "failed": failed})
+}
+
+// TestEmail godoc
+// @Summary     Send a test email to verify MAIL_DRIVER configuration
+// @Description Admin diagnostic endpoint — sends a minimal message through whichever mail transport is configured (SES or SMTP) and reports the raw result (including connection/auth errors), so email delivery can be debugged without creating a real user.
+// @Tags        notifications
+// @Security    BearerAuth
+// @Accept      json
+// @Produce     json
+// @Param       body body notifDTO.TestEmailRequest true "Recipient address"
+// @Success     200 {object} notifDTO.TestEmailResponse
+// @Failure     422 {object} response.ErrorEnvelope
+// @Router      /v1/admin/notifications/test-email [post]
+func (h *NotificationHandler) TestEmail(c *gin.Context) {
+	var req notifDTO.TestEmailRequest
+	if !validate.BindJSON(c, &req) {
+		return
+	}
+	if err := h.svc.SendTestEmail(c.Request.Context(), req.To); err != nil {
+		response.OK(c, "Test email failed", notifDTO.TestEmailResponse{Sent: false, Error: err.Error()})
+		return
+	}
+	response.OK(c, "Test email sent", notifDTO.TestEmailResponse{Sent: true})
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

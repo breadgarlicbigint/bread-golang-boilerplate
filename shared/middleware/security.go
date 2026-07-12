@@ -120,10 +120,12 @@ func SecurityHeaders(cfg SecurityConfig) gin.HandlerFunc {
 			h.Set("Cross-Origin-Resource-Policy", cfg.CORP)
 		}
 
-		// Always remove server fingerprint
-		h.Del("X-Powered-By")
 		h.Set("X-DNS-Prefetch-Control", "off")
 
 		c.Next()
+
+		// Remove server fingerprint after downstream handlers run, in case one
+		// of them sets X-Powered-By (e.g. a proxied/upstream header echo).
+		h.Del("X-Powered-By")
 	}
 }

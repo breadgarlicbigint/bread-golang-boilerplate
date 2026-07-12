@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/pagination"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
@@ -13,7 +14,6 @@ import (
 	userSvc "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/service"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // ── Fake repo ─────────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ func newFakeRepo() *fakeUserRepo {
 }
 
 func (r *fakeUserRepo) Create(_ context.Context, u *entity.User) error {
-	u.ID = primitive.NewObjectID()
+	u.ID = uuid.New()
 	u.CreatedAt = time.Now()
 	u.UpdatedAt = time.Now()
 	r.byID[u.ID.String()] = u
@@ -42,7 +42,7 @@ func (r *fakeUserRepo) Create(_ context.Context, u *entity.User) error {
 	return nil
 }
 
-func (r *fakeUserRepo) FindByID(_ context.Context, id primitive.ObjectID) (*entity.User, error) {
+func (r *fakeUserRepo) FindByID(_ context.Context, id uuid.UUID) (*entity.User, error) {
 	u, ok := r.byID[id.String()]
 	if !ok {
 		return nil, nil
@@ -66,13 +66,17 @@ func (r *fakeUserRepo) List(_ context.Context, _ pagination.Query) ([]*entity.Us
 	return users, int64(len(users)), nil
 }
 
-func (r *fakeUserRepo) Update(_ context.Context, id primitive.ObjectID, fields bson.M) error {
+func (r *fakeUserRepo) Update(_ context.Context, id uuid.UUID, fields bson.M) error {
 	u, ok := r.byID[id.String()]
 	if !ok {
 		return nil
 	}
 	if v, ok := fields["status"]; ok {
-		u.Status = entity.UserStatus(v.(string))
+		if s, ok := v.(entity.UserStatus); ok {
+			u.Status = s
+		} else {
+			u.Status = entity.UserStatus(v.(string))
+		}
 	}
 	if v, ok := fields["passwordHash"]; ok {
 		u.PasswordHash = v.(string)
@@ -80,7 +84,7 @@ func (r *fakeUserRepo) Update(_ context.Context, id primitive.ObjectID, fields b
 	return nil
 }
 
-func (r *fakeUserRepo) SoftDelete(_ context.Context, id primitive.ObjectID) error {
+func (r *fakeUserRepo) SoftDelete(_ context.Context, id uuid.UUID) error {
 	delete(r.byID, id.String())
 	return nil
 }
@@ -95,14 +99,14 @@ func (r *fakeUserRepo) ExistsByUsername(_ context.Context, username string) (boo
 	return ok, nil
 }
 
-func (r *fakeUserRepo) IncrementPasswordAttempts(_ context.Context, id primitive.ObjectID) error {
+func (r *fakeUserRepo) IncrementPasswordAttempts(_ context.Context, id uuid.UUID) error {
 	if u, ok := r.byID[id.String()]; ok {
 		u.PasswordAttempts++
 	}
 	return nil
 }
 
-func (r *fakeUserRepo) ResetPasswordAttempts(_ context.Context, id primitive.ObjectID) error {
+func (r *fakeUserRepo) ResetPasswordAttempts(_ context.Context, id uuid.UUID) error {
 	if u, ok := r.byID[id.String()]; ok {
 		u.PasswordAttempts = 0
 		u.LockedUntil = nil
@@ -117,7 +121,9 @@ func newSvc(t *testing.T) (*userSvc.UserService, *fakeUserRepo) {
 	repo := newFakeRepo()
 	hasher := hash.New(4)
 	cfg := config.AuthConfig{MaxPasswordAttempts: 5, LockoutDuration: 15 * time.Minute}
-	return userSvc.New(repo, hasher, cfg), repo
+	// localMailer, emailQueue, and log are all nil-safe — welcome email sending
+	// is a no-op when either is nil (see UserService.sendWelcomeEmail).
+	return userSvc.New(repo, hasher, cfg, nil, nil, "http://localhost:5173", nil), repo
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -130,9 +136,9 @@ func TestCreate_Success(t *testing.T) {
 		Password:  "Password@123",
 		FirstName: "Alice",
 		LastName:  "Smith",
-		RoleID:    primitive.NewObjectID().String(),
+		RoleID:    uuid.New().String(),
 	}
-	u, err := svc.Create(context.Background(), req)
+	u, err := svc.Create(context.Background(), "en", req)
 	if err != nil {
 		t.Fatalf("Create: unexpected error: %v", err)
 	}
@@ -148,9 +154,9 @@ func TestCreate_DuplicateEmail(t *testing.T) {
 	svc, repo := newSvc(t)
 	repo.byEmail["alice@example.com"] = &entity.User{Email: "alice@example.com"}
 
-	_, err := svc.Create(context.Background(), dto.CreateUserRequest{
+	_, err := svc.Create(context.Background(), "en", dto.CreateUserRequest{
 		Email: "alice@example.com", Username: "alice2", Password: "Password@123",
-		FirstName: "A", LastName: "B", RoleID: primitive.NewObjectID().String(),
+		FirstName: "A", LastName: "B", RoleID: uuid.New().String(),
 	})
 	if err == nil {
 		t.Fatal("expected ErrEmailTaken")
@@ -165,9 +171,9 @@ func TestCreate_DuplicateUsername(t *testing.T) {
 	svc, repo := newSvc(t)
 	repo.byUsername["alice"] = &entity.User{Username: "alice"}
 
-	_, err := svc.Create(context.Background(), dto.CreateUserRequest{
+	_, err := svc.Create(context.Background(), "en", dto.CreateUserRequest{
 		Email: "other@example.com", Username: "alice", Password: "Password@123",
-		FirstName: "A", LastName: "B", RoleID: primitive.NewObjectID().String(),
+		FirstName: "A", LastName: "B", RoleID: uuid.New().String(),
 	})
 	ae, ok := errors.As(err)
 	if !ok || ae.Code != "USERNAME_TAKEN" {
@@ -177,7 +183,7 @@ func TestCreate_DuplicateUsername(t *testing.T) {
 
 func TestGetByID_NotFound(t *testing.T) {
 	svc, _ := newSvc(t)
-	_, err := svc.GetByID(context.Background(), primitive.NewObjectID().String())
+	_, err := svc.GetByID(context.Background(), uuid.New().String())
 	ae, ok := errors.As(err)
 	if !ok || ae.Code != "USER_NOT_FOUND" {
 		t.Errorf("expected USER_NOT_FOUND, got: %v", err)
@@ -195,7 +201,7 @@ func TestGetByID_InvalidObjectID(t *testing.T) {
 
 func TestBlockAndUnblockUser(t *testing.T) {
 	svc, repo := newSvc(t)
-	id := primitive.NewObjectID()
+	id := uuid.New()
 	repo.byID[id.String()] = &entity.User{ID: id, Status: entity.UserStatusActive}
 
 	if err := svc.BlockUser(context.Background(), id.String(), "spam"); err != nil {
@@ -215,7 +221,7 @@ func TestBlockAndUnblockUser(t *testing.T) {
 func TestList(t *testing.T) {
 	svc, repo := newSvc(t)
 	for i := 0; i < 5; i++ {
-		id := primitive.NewObjectID()
+		id := uuid.New()
 		repo.byID[id.String()] = &entity.User{ID: id, Status: entity.UserStatusActive}
 	}
 	users, total, err := svc.List(context.Background(), pagination.Query{Page: 1, PerPage: 10})
@@ -234,7 +240,7 @@ func TestChangePassword_WrongOld(t *testing.T) {
 	svc, repo := newSvc(t)
 	hasher := hash.New(4)
 	pw, _ := hasher.Hash("correct")
-	id := primitive.NewObjectID()
+	id := uuid.New()
 	repo.byID[id.String()] = &entity.User{ID: id, PasswordHash: pw, Status: entity.UserStatusActive}
 
 	err := svc.ChangePassword(context.Background(), id.String(), dto.ChangePasswordRequest{

@@ -61,3 +61,14 @@ type NotificationResponse struct {
 type UnreadCountResponse struct {
 	Unread int64 `json:"unread"`
 }
+
+// ── Test Email (admin diagnostic) ──────────────────────────────────────────────
+
+type TestEmailRequest struct {
+	To string `json:"to" validate:"required,email"`
+}
+
+type TestEmailResponse struct {
+	Sent  bool   `json:"sent"`
+	Error string `json:"error,omitempty"`
+}

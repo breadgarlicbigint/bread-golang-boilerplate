@@ -25,14 +25,14 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       # Service discovery — use Docker service names (same network)
-      MONGO_URI:    "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&serverSelectionTimeoutMS=5000"
+      MONGO_URI: "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&serverSelectionTimeoutMS=5000"
       MONGO_DB_NAME: "bread_boilerplate"
-      REDIS_HOST:   "redis"
-      REDIS_PORT:   "6379"
-      APP_ENV:      "development"
-      APP_PORT:     "3000"
-      GOPATH:       "/go"
-      GOBIN:        "/go/bin"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      APP_ENV: "development"
+      APP_PORT: "3000"
+      GOPATH: "/go"
+      GOBIN: "/go/bin"
     # Keep container running
     command: sleep infinity
     depends_on:
@@ -40,6 +40,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
       - devnet
     ports:
@@ -53,13 +57,13 @@ services:
     image: mongo:8.0
     container_name: bread-dev-mongo1
     restart: unless-stopped
-    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
     ports:
       - "27017:27017"
     volumes:
       - mongo1-data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping').ok", "--quiet"]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping').ok", "--quiet" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -71,7 +75,7 @@ services:
     image: mongo:8.0
     container_name: bread-dev-mongo2
     restart: unless-stopped
-    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
     volumes:
       - mongo2-data:/data/db
     networks:
@@ -81,7 +85,7 @@ services:
     image: mongo:8.0
     container_name: bread-dev-mongo3
     restart: unless-stopped
-    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
     volumes:
       - mongo3-data:/data/db
     networks:
@@ -100,8 +104,7 @@ services:
       mongo3:
         condition: service_started
     command: >
-      mongosh --host mongo1:27017 --eval
-      'try {
+      mongosh --host mongo1:27017 --eval 'try {
         rs.status();
         print("Replica set already initialised");
       } catch(e) {
@@ -128,17 +131,65 @@ services:
     volumes:
       - redis-data:/data
     command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --loglevel warning
+      redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --loglevel warning
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 5s
+    networks:
+      - devnet
+
+  # ── RabbitMQ ──────────────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: bread-dev-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672" # AMQP
+      - "15672:15672" # management UI → http://localhost:15672 (guest/guest)
+    environment:
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - devnet
+
+  # ── Kafka (KRaft single-node, no ZooKeeper) ────────────────────────────────────
+  kafka:
+    image: bitnamilegacy/kafka:3.7
+    container_name: bread-dev-kafka
+    restart: unless-stopped
+    ports:
+      - "9094:9094" # EXTERNAL listener for host clients → localhost:9094
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     networks:
       - devnet
 
@@ -147,6 +198,8 @@ volumes:
   mongo2-data:
   mongo3-data:
   redis-data:
+  rabbitmq-data:
+  kafka-data:
   go-mod-cache:
   go-build-cache:
   npm-cache:

@@ -32,6 +32,13 @@ make build-emails       # compile React Email .tsx → pkg/email/dist/ (requires
 make web-install        # install web/ (React test client) dependencies
 make web-dev            # run the web test client → http://localhost:5173
 make lint               # golangci-lint
+make deps               # go get the RabbitMQ + Kafka client libs and sync go.sum
+make run-worker          # build + run the Redis/Asynq worker (apps/worker)
+make run-worker-rabbitmq # build + run the RabbitMQ worker (apps/worker-rabbitmq)
+make run-worker-kafka    # build + run the Kafka worker (apps/worker-kafka)
+make docker-worker       # docker-up + Redis/Asynq worker (profile: worker)
+make docker-rabbitmq     # docker-up + RabbitMQ broker + worker (profile: rabbitmq)
+make docker-kafka        # docker-up + Kafka broker + worker (profile: kafka)
 make help               # full target list
 ```
 
@@ -48,7 +55,7 @@ make help               # full target list
 | Password | `golang.org/x/crypto/bcrypt` (cost 12) |
 | 2FA | `pquerna/otp` (TOTP) |
 | Passkey/WebAuthn | `go-webauthn/webauthn` |
-| Background jobs | `hibiken/asynq` (Redis-backed, mirrors BullMQ) |
+| Background jobs | `hibiken/asynq` (Redis, default) or `rabbitmq/amqp091-go` / `segmentio/kafka-go` — selected via `QUEUE_DRIVER` (`pkg/worker`, `pkg/queue`) |
 | Config | `spf13/viper` (.env + env vars + defaults) |
 | Validation | `go-playground/validator/v10` (centralised in `shared/validate`) |
 | Logging | `go.uber.org/zap` |
@@ -76,7 +83,13 @@ apps/                           ← Deployable binaries
     swagger.go                  ← blank import registers swagger docs
     app/app.go                  ← dependency wiring (all modules assembled here)
   worker/
-    main.go                     ← Asynq background worker entry point
+    main.go                     ← Asynq (Redis) background worker entry point
+  worker-rabbitmq/
+    main.go                     ← RabbitMQ background worker entry point — same
+                                   task handlers as worker/, wired via pkg/queue
+  worker-kafka/
+    main.go                     ← Kafka background worker entry point — same
+                                   task handlers as worker/, wired via pkg/queue
 
 modules/                        ← Domain modules (future microservices)
   auth/
@@ -114,7 +127,12 @@ pkg/                            ← Pure utilities (zero domain knowledge)
   sms/                          ← Twilio SMS + WhatsApp sender
   storage/                      ← AWS S3 presign / upload / delete
   uuidbson/                     ← UUID BSON Binary-4 codec
-  worker/                       ← Asynq client + server + task handlers
+  worker/                       ← Asynq (Redis) client + server + task handlers
+  queue/                        ← Backend-agnostic Publisher/Consumer contract
+    rabbitmq/                   ← RabbitMQ (AMQP) Publisher/Consumer impl
+    kafka/                      ← Kafka Publisher/Consumer impl
+    tasks/                      ← Transport-agnostic job handlers shared by
+                                   worker-rabbitmq and worker-kafka
 
 locales/                        ← en.json, id.json (i18n strings incl. email tokens)
 email-templates/                ← React Email .tsx source (build-time, Node.js only)
@@ -465,6 +483,42 @@ localMailer.SendOTPCode(ctx, lang, to, name, code, "10", purpose)
 localMailer.SendNotification(ctx, lang, to, name, title, body, ctaLabel, ctaURL)
 ```
 
+### Async delivery via the worker queue (transactional emails)
+
+Transactional emails triggered by an HTTP request must NOT block the request on
+a slow/failure-prone SMTP/SES round-trip. The pattern is **render in the API,
+send in the worker**:
+
+```
+API request path                          Worker process (apps/worker)
+────────────────                          ────────────────────────────
+localMailer.RenderWelcome(...)  ┐
+localMailer.SubjectWelcome(...) ├─ fast, in-memory (i18n needs request `lang`)
+                                ┘
+jobQueue.EnqueueEmail(to,subject,html,text)  ──►  Redis (asynq "default" queue)
+                                                        │
+                                                        ▼
+                                             EmailTaskHandler.Handle
+                                             mailer.Send(...)  ← retryable (MaxRetry 5)
+```
+
+- `worker.Client.EnqueueEmail(to, subject, html, text)` is the enqueue entry
+  point. Services depend on the small `EmailQueue` interface (see
+  `modules/user/service/user.service.go`), never on asynq directly.
+- The API wires a `*worker.Client` in `apps/api/app/app.go` (`jobQueue`) and
+  passes it into services; it is closed in `App.Shutdown`.
+- The reference implementation is the **welcome email on admin user creation**
+  (`UserService.Create` → `sendWelcomeEmail` → `jobQueue.EnqueueEmail`). Follow
+  it for any new request-triggered transactional email.
+- **The worker process must be running for these emails to actually be sent.**
+  `make dev` (API only) just enqueues to Redis — jobs sit in the queue until a
+  worker consumes them. Run `make docker-worker` (or `make run-worker`) too.
+- **Diagnostic exception:** `POST /v1/admin/notifications/test-email` sends
+  synchronously via `NotificationService.SendTestEmail` and returns the raw
+  transport error (`{"sent":false,"error":"..."}`), specifically so mail-driver
+  config can be verified without a worker running. Keep genuinely diagnostic /
+  "need the result now" sends synchronous; everything else goes through the queue.
+
 ### Adding a new email template
 
 1. Create `email-templates/src/emails/my-template.tsx`
@@ -481,6 +535,61 @@ localMailer.SendNotification(ctx, lang, to, name, title, body, ctaLabel, ctaURL)
 5. Add `Render*`, `Subject*`, `Send*` methods in `pkg/email/localized_mailer.go`
 
 6. Run `make build-emails`
+
+---
+
+## Background Job Queue Backends (Redis / RabbitMQ / Kafka)
+
+Background jobs (currently: transactional email delivery, with notification
+send/broadcast handlers also wired) can run on three interchangeable
+transports, selected by `QUEUE_DRIVER`:
+
+| `QUEUE_DRIVER` | Worker process | Enqueue-side package | Consume-side package |
+|---|---|---|---|
+| `redis` (default) | `apps/worker` | `pkg/worker` (`worker.Client`) | `pkg/worker` + `pkg/worker/tasks` |
+| `rabbitmq` | `apps/worker-rabbitmq` | `pkg/queue/rabbitmq` (`rabbitmq.Publisher`) | `pkg/queue/rabbitmq` + `pkg/queue/tasks` |
+| `kafka` | `apps/worker-kafka` | `pkg/queue/kafka` (`kafka.Publisher`) | `pkg/queue/kafka` + `pkg/queue/tasks` |
+
+`pkg/queue/queue.go` defines the backend-agnostic contract (`Publisher`,
+`Consumer`, `Delivery`, `HandlerFunc`) that the RabbitMQ and Kafka packages
+implement — it mirrors the shape of the Redis/Asynq implementation in
+`pkg/worker` so all three are drop-in parallel. Task-type strings
+(`email:send`, `notification:send`, `notification:broadcast`,
+`session:cleanup`) and JSON payload shapes are identical across all three, so
+switching `QUEUE_DRIVER` doesn't change what a service enqueues.
+
+**`QUEUE_DRIVER` MUST match the worker process you actually run** — the API
+only publishes jobs, it never consumes them. `apps/api/app/app.go`'s
+`buildJobQueue` picks the `Publisher` at startup from `QUEUE_DRIVER`; a
+mismatch (e.g. `QUEUE_DRIVER=redis` while only `apps/worker-rabbitmq` is
+running) means jobs are published to a broker nobody consumes, so they queue
+up and never run — no error, no crash, just silence.
+
+```bash
+# Redis (Asynq) — default
+make docker-worker       # or: make run-worker
+
+# RabbitMQ — management UI at http://localhost:15672 (guest/guest)
+make docker-rabbitmq     # or: make run-worker-rabbitmq
+
+# Kafka — broker at localhost:9094 (host) / kafka:9092 (in-network)
+make docker-kafka        # or: make run-worker-kafka
+```
+
+`make deps` runs `go get` for the RabbitMQ (`rabbitmq/amqp091-go`) and Kafka
+(`segmentio/kafka-go`) client libraries and syncs `go.sum` — both are
+pure-Go clients (no CGO/librdkafka), so `CGO_ENABLED=0` builds still work.
+
+Services depend only on the small `EmailQueue` interface
+(`EnqueueEmail(to, subject, html, text) error`) — never on `asynq`, `amqp091-go`,
+or `kafka-go` directly — so adding a fourth transport means implementing
+`queue.Publisher`/`queue.Consumer` and adding one case to `buildJobQueue`; no
+caller changes.
+
+Handlers for the RabbitMQ/Kafka workers live in `pkg/queue/tasks` (the
+parallel of `pkg/worker/tasks`) and are registered identically by both
+`apps/worker-rabbitmq/main.go` and `apps/worker-kafka/main.go` via
+`tasks.RegisterAll` / `tasks.RegisterNotifications`.
 
 ---
 
@@ -709,6 +818,7 @@ Key variables (see `.env.example` for complete list):
 ```env
 # Required
 APP_ENV=development
+APP_URL=http://localhost:5173  # frontend base URL — used to build links in outbound emails (dashboard/docs/verify/reset). Defaults to the web/ test client.
 MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
 REDIS_HOST=redis
 JWT_ACCESS_PRIVATE_KEY_PATH=./keys/access_private.pem
@@ -718,6 +828,7 @@ JWT_REFRESH_PUBLIC_KEY_PATH=./keys/refresh_public.pem
 
 # Optional integrations
 MAIL_DRIVER=ses                # "ses" (default, needs AWS_ACCESS_KEY_ID/AWS_SES_*) or "smtp" (needs SMTP_*)
+SMTP_HOST=smtp.gmail.com       # for personal Gmail use smtp.gmail.com, NOT smtp.google.com (Workspace relay — rejects personal accounts)
 AWS_ACCESS_KEY_ID=             # enables SES email (if MAIL_DRIVER=ses) + S3
 TWILIO_ACCOUNT_SID=            # enables SMS + WhatsApp OTP
 FIREBASE_CREDENTIALS_FILE=     # enables FCM push notifications
@@ -725,6 +836,11 @@ GITHUB_CLIENT_ID=              # enables GitHub SSO
 APPLE_CLIENT_ID=               # enables Apple Sign In
 SENTRY_DSN=                    # enables error tracking
 MULTI_TENANT_ENABLED=false     # enable multi-tenant mode
+
+# Background job queue backend — MUST match the worker process you run
+QUEUE_DRIVER=redis             # "redis" (default, apps/worker) | "rabbitmq" (apps/worker-rabbitmq) | "kafka" (apps/worker-kafka)
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/   # used when QUEUE_DRIVER=rabbitmq
+KAFKA_BROKERS=kafka:9092                          # used when QUEUE_DRIVER=kafka
 ```
 
 In Docker, `MONGO_URI` and `REDIS_HOST` are always overridden by
@@ -811,14 +927,22 @@ and click **"Open in Codespaces"**. All services start automatically.
 
 ```bash
 make docker-up          # start: API + MongoDB 3-node rs + Redis
-make docker-worker      # same + Asynq background worker
-make docker-down        # stop all
+make docker-worker      # same + Redis/Asynq background worker (profile: worker)
+make docker-rabbitmq    # same + RabbitMQ broker + RabbitMQ worker (profile: rabbitmq)
+make docker-kafka       # same + Kafka broker + Kafka worker (profile: kafka)
+make docker-down        # stop all (all three worker profiles)
 make docker-rebuild     # rebuild + restart app container only
 make docker-clean       # remove containers AND volumes (destructive)
 make seed               # seed DB (runs inside Docker network, requires docker-up)
 make migrate-indexes    # create MongoDB indexes (inside Docker network)
 make seed-local         # seed against localhost:27017 (for local dev without Docker)
 ```
+
+`docker-worker`, `docker-rabbitmq`, and `docker-kafka` are mutually exclusive
+choices of **one** queue backend, not additive — each is a separate Compose
+profile (`worker` / `rabbitmq` / `kafka`) that starts its own broker (where
+applicable) and matching worker container. Set `QUEUE_DRIVER` in `.env` to
+match whichever one you start. See "Background Job Queue Backends" above.
 
 The `email-builder` Docker stage compiles React Email templates before the
 Go build stage runs, so the embedded HTML is always fresh in Docker builds.
@@ -865,6 +989,13 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | Testing `web/` against a non-default API port/host | Change the API base URL from the app's own Settings page (persisted in `localStorage`) — no rebuild needed |
 | Setting `SMTP_*` vars but email still not sending | `MAIL_DRIVER` must be set to `smtp` — it stays on `ses` (the default) otherwise, and SMTP config is ignored |
 | Constructing a `*email.Mailer` directly with `email.NewMailer(cfg.AWS)` | `NewMailer` now takes an `email.Sender`, not `AWSConfig` — use `email.NewMailerFromConfig(cfg, log)` |
+| Gmail SMTP fails to connect / auth with `SMTP_HOST=smtp.google.com` | `smtp.google.com` is the Workspace relay; personal `@gmail.com` accounts must use `SMTP_HOST=smtp.gmail.com` (587 STARTTLS or 465 SSL) with a 16-char **App Password** (2FA required), not the account password |
+| Welcome email (or other transactional email) never arrives even though config is correct | Request-triggered emails are enqueued to the asynq queue and delivered by the **worker** — run `make docker-worker`/`make run-worker`; `make dev` alone only enqueues. See "Async delivery via the worker queue" |
+| Enqueuing email from a service by importing `asynq` / task-type strings | Depend on the `EmailQueue` interface (`EnqueueEmail(to,subject,html,text)`) — `worker.Client` implements it; render via `LocalizedMailer` then enqueue |
+| Adding a request-triggered email as a synchronous `localMailer.Send*` call | Only diagnostics (e.g. `test-email`) send synchronously — enqueue everything else via `jobQueue.EnqueueEmail` so a slow/failed SMTP send doesn't block or fail the HTTP request |
+| Jobs enqueued but never processed, no error anywhere | `QUEUE_DRIVER` doesn't match the worker process actually running — e.g. `QUEUE_DRIVER=rabbitmq` in `.env` but `make docker-worker` (Redis) is what's running. Start the worker whose profile matches `QUEUE_DRIVER` (`docker-worker`/`docker-rabbitmq`/`docker-kafka`) |
+| Importing `asynq`, `amqp091-go`, or `kafka-go` directly in a `modules/*/service` file | Depend on the `EmailQueue` interface only — the concrete `Publisher` (`worker.Client` / `rabbitmq.Publisher` / `kafka.Publisher`) is chosen once in `apps/api/app/app.go`'s `buildJobQueue` |
+| `go: missing go.sum entry` for `amqp091-go` or `kafka-go` after a fresh clone | Run `make deps` (go get both client libs + `go mod tidy`) |
 
 ---
 
@@ -877,7 +1008,15 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `shared/validate/validate.go` | Single validation entry point for all handlers |
 | `shared/response/response.go` | Standard response envelope helpers |
 | `shared/errors/errors.go` | Domain error sentinels (add new ones here) |
-| `modules/role/repository/role.repository.go` | Role lookup — `FindByID` used during JWT issuance |
+| `modules/role/repository/role.repository.go` | Role lookup — `FindByID` used during JWT issuance, `FindAll` for the roles dropdown |
+| `modules/role/handler/role.handler.go` | `GET /v1/roles` (admin) — lists roles to populate the create-user role dropdown in `web/` |
+| `pkg/worker/worker.go` | Asynq (Redis) client/server + task types; `Client.EnqueueEmail` is the transactional-email entry point |
+| `pkg/worker/tasks/tasks.go` | Task handlers run by the Redis/Asynq worker (`email:send`, session cleanup, …) |
+| `pkg/queue/queue.go` | Backend-agnostic `Publisher`/`Consumer` contract shared by RabbitMQ + Kafka; `EmailQueue` callers depend on this shape |
+| `pkg/queue/rabbitmq/rabbitmq.go` | RabbitMQ `Publisher`/`Consumer` impl (AMQP exchange + durable queue) |
+| `pkg/queue/kafka/kafka.go` | Kafka `Publisher`/`Consumer` impl (topic + consumer group, `segmentio/kafka-go`) |
+| `pkg/queue/tasks/tasks.go` | Task handlers shared by `apps/worker-rabbitmq` and `apps/worker-kafka` |
+| `apps/api/app/app.go` (`buildJobQueue`) | Picks the enqueue-side `Publisher` from `QUEUE_DRIVER` — must match the worker process actually running |
 | `modules/activity/service/activity.service.go` | Action constants + log helpers |
 | `modules/<name>/contract.go` | Public interface — the only safe cross-module import |
 | `pkg/dbid/dbid.go` | ID strategy helpers (uuid / objectid) — see `docs/id-migration.md` |

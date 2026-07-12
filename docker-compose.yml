@@ -151,7 +151,63 @@ services:
     networks:
       - bread-net
 
-  # ── Background worker (optional) ───────────────────────────────────────────────
+  # ── RabbitMQ (queue backend — profile: rabbitmq) ───────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: bread-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # management UI → http://localhost:15672 (guest/guest)
+    environment:
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - bread-net
+    profiles:
+      - rabbitmq
+
+  # ── Kafka (queue backend — profile: kafka, KRaft single-node, no ZooKeeper) ────
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: bread-kafka
+    restart: unless-stopped
+    ports:
+      - "9094:9094"    # EXTERNAL listener for host clients → localhost:9094
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - bread-net
+    profiles:
+      - kafka
+
+  # ── Background worker — Redis / Asynq (profile: worker) ────────────────────────
   worker:
     build:
       context: .
@@ -178,11 +234,69 @@ services:
     profiles:
       - worker
 
+  # ── Background worker — RabbitMQ (profile: rabbitmq) ───────────────────────────
+  worker-rabbitmq:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER_CMD: ./apps/worker-rabbitmq
+    container_name: bread-go-worker-rabbitmq
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGO_URI:     "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0"
+      MONGO_DB_NAME: "bread_boilerplate"
+      RABBITMQ_URL:  "amqp://guest:guest@rabbitmq:5672/"
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo1:
+        condition: service_healthy
+    networks:
+      - bread-net
+    profiles:
+      - rabbitmq
+
+  # ── Background worker — Kafka (profile: kafka) ─────────────────────────────────
+  worker-kafka:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER_CMD: ./apps/worker-kafka
+    container_name: bread-go-worker-kafka
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGO_URI:     "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0"
+      MONGO_DB_NAME: "bread_boilerplate"
+      KAFKA_BROKERS: "kafka:9092"
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongo1:
+        condition: service_healthy
+    networks:
+      - bread-net
+    profiles:
+      - kafka
+
 volumes:
   mongo1-data:
   mongo2-data:
   mongo3-data:
   redis-data:
+  rabbitmq-data:
+  kafka-data:
 
 networks:
   bread-net:
