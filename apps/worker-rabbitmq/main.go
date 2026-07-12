@@ -52,11 +52,12 @@ func main() {
 			zapLog.Warn("worker-rabbitmq: FCM init failed", zap.Error(err))
 		}
 	}
-	// promoQueue is nil here: a worker is the terminal "do the actual send"
-	// layer, so Broadcast should run its synchronous per-user path directly
-	// rather than re-enqueue — only the API (apps/api/app/app.go) routes
-	// broadcast email through the promotional queue.
-	notifService := notifSvc.New(mongo, fcmSender, mailer, nil, zapLog)
+	// Both queue params are nil here: a worker is the terminal "do the
+	// actual send" layer, so Send/Broadcast should run their synchronous
+	// paths directly rather than re-enqueue — only the API
+	// (apps/api/app/app.go) routes email through the transactional/
+	// promotional queues.
+	notifService := notifSvc.New(mongo, fcmSender, mailer, nil, nil, zapLog)
 
 	// ── Consumer ────────────────────────────────────────────────────────────────
 	consumer, err := rabbitmq.NewConsumer(cfg.RabbitMQ, zapLog)

@@ -180,7 +180,7 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 			log.Warn("app: Firebase FCM init failed — push disabled", zap.Error(err))
 		}
 	}
-	notifService := notifSvc.New(mongo, fcmSender, mailer, jobQueue, log)
+	notifService := notifSvc.New(mongo, fcmSender, mailer, jobQueue, jobQueue, log)
 
 	// ── App versioning ────────────────────────────────────────────────────────
 	versionService := appverSvc.New(mongo)

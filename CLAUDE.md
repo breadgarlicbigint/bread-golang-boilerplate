@@ -631,22 +631,31 @@ single-backend behavior is unchanged unless you opt in. `apps/api/app/app.go`'s
 `buildJobQueue` builds a `queue.Publisher` for each distinct driver referenced
 (`buildPublisher`) and wires them into a `*router.Router`, which itself
 satisfies `queue.Publisher` and is what `App.jobQueue` actually holds — every
-caller (`EmailQueue`, `PromotionalEmailQueue`) is unaware routing is
-happening. If a transactional/promotional override fails to connect, it logs
-a warning and falls back to the default driver rather than disabling jobs
-outright; only a default-driver failure disables jobs entirely (`nil`).
+caller (`EmailQueue`, `TransactionalEmailQueue`, `PromotionalEmailQueue`) is
+unaware routing is happening. If a transactional/promotional override fails
+to connect, it logs a warning and falls back to the default driver rather
+than disabling jobs outright; only a default-driver failure disables jobs
+entirely (`nil`).
 
-- `EnqueueEmail` (welcome/verify/reset/OTP — `modules/user/service`,
-  `modules/auth/service`) publishes `queue.TaskSendEmail` → routed by
-  `QUEUE_TRANSACTIONAL_DRIVER`.
+- `EnqueueEmail` publishes `queue.TaskSendEmail` → routed by
+  `QUEUE_TRANSACTIONAL_DRIVER`. Callers: the welcome/verify/reset/OTP flows
+  (`modules/user/service`, `modules/auth/service`), and
+  `NotificationService.Send`'s email channel
+  (`modules/notification/service`) — a single admin-triggered notification is
+  treated the same as those flows (reliability-sensitive, low-volume). Falls
+  back to a synchronous send when no transactional queue is configured.
 - `EnqueuePromotionalEmail` publishes `queue.TaskSendPromotionalEmail` →
   routed by `QUEUE_PROMOTIONAL_DRIVER`. The one real caller today is
-  `NotificationService.Broadcast`'s email channel
-  (`modules/notification/service`) — when a promotional queue is configured,
-  broadcasting to many users enqueues one job per recipient instead of
-  blocking the HTTP request on N sequential SMTP/SES sends; `success`/`failed`
-  in the response then mean "queued", not "delivered". Without a promotional
-  queue configured, `Broadcast` keeps the original synchronous per-user path.
+  `NotificationService.Broadcast`'s email channel — when a promotional queue
+  is configured, broadcasting to many users enqueues one job per recipient
+  instead of blocking the HTTP request on N sequential SMTP/SES sends;
+  `success`/`failed` in the response then mean "queued", not "delivered".
+  Without a promotional queue configured, `Broadcast` keeps the original
+  synchronous per-user path.
+- `apps/api/app/app.go` passes the same `*router.Router` (`jobQueue`) as both
+  the `TransactionalEmailQueue` and `PromotionalEmailQueue` arguments to
+  `notifSvc.New` — the router itself resolves each call to the right backend
+  by task type, so a single `Router` instance correctly backs both roles.
 - Both task types share one `EmailTaskHandler` on every worker — routing only
   changes which broker a job lands on, not how it's consumed. **Whichever
   broker(s) you route to must have a worker actually running against them**,
@@ -1142,6 +1151,7 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | Set `QUEUE_TRANSACTIONAL_DRIVER`/`QUEUE_PROMOTIONAL_DRIVER` but promotional/transactional jobs still silent | Same rule as `QUEUE_DRIVER`, per-route — the worker for THAT driver must be running too. `make docker-queues` starts all three at once instead of picking one via `docker-worker`/`docker-rabbitmq`/`docker-kafka` |
 | Importing `asynq`, `amqp091-go`, or `kafka-go` directly in a `modules/*/service` file | Depend on the `EmailQueue` interface only — the concrete `Publisher` (`worker.Client` / `rabbitmq.Publisher` / `kafka.Publisher`) is chosen once in `apps/api/app/app.go`'s `buildJobQueue` |
 | `go: missing go.sum entry` for `amqp091-go` or `kafka-go` after a fresh clone | Run `make deps` (go get both client libs + `go mod tidy`) |
+| `POST /v1/admin/notifications/send` or `/broadcast` with `channel: "email"` returns 400 "Recipient email address is required" | `NotificationService.sendEmail` has no `UserRepo` to look up the recipient's real address yet — include `"data": {"email": "..."}` in the request body. This used to surface as an opaque 500 (`errors.ErrEmailNotAvailable`/`ErrMailerNotConfigured` now map it to a proper 4xx via `response.HandleAppError`) |
 | `make dev` feels slow on every save, even for unrelated changes | Expected — `scripts/dev/air-build-api.sh` runs `swag init` (a few seconds) before every rebuild by design, so Swagger docs never go stale. Email templates only rebuild when `email-templates/src` actually changed |
 | Edited an email `.tsx` under `make dev` but the rendered HTML didn't change | Check `.air/build.log` for an `npm run build` failure; also confirm Node.js is on `PATH` — the script skips the email rebuild (with a warning) if `node` isn't found, but still regenerates Swagger and builds the Go binary |
 

@@ -98,7 +98,9 @@
     "invalidID": "ID notifikasi tidak valid",
     "broadcastComplete": "Siaran selesai",
     "testEmailFailed": "Email uji coba gagal",
-    "testEmailSent": "Email uji coba terkirim"
+    "testEmailSent": "Email uji coba terkirim",
+    "mailerNotConfigured": "Pengiriman email belum dikonfigurasi",
+    "emailNotAvailable": "Alamat email penerima wajib diisi pada data.email untuk kanal email"
   },
   "analytics": {
     "fetchSuccess": "Data berhasil diambil",

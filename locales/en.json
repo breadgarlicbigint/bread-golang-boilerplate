@@ -110,7 +110,9 @@
     "invalidID": "Invalid notification ID",
     "broadcastComplete": "Broadcast complete",
     "testEmailFailed": "Test email failed",
-    "testEmailSent": "Test email sent"
+    "testEmailSent": "Test email sent",
+    "mailerNotConfigured": "Email delivery is not configured",
+    "emailNotAvailable": "Recipient email address is required in data.email for the email channel"
   },
   "apiKey": {
     "createSuccess": "API key created",

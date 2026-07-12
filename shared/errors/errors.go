@@ -79,4 +79,8 @@ var (
 
 	// Feature flag
 	ErrFeatureDisabled = NewI18n(http.StatusForbidden, "FEATURE_DISABLED", "featureFlag.disabled", "This feature is not enabled")
+
+	// Notification
+	ErrMailerNotConfigured = NewI18n(http.StatusServiceUnavailable, "MAILER_NOT_CONFIGURED", "notification.mailerNotConfigured", "Email delivery is not configured")
+	ErrEmailNotAvailable   = NewI18n(http.StatusBadRequest, "EMAIL_NOT_AVAILABLE", "notification.emailNotAvailable", "Recipient email address is required in data.email for the email channel")
 )

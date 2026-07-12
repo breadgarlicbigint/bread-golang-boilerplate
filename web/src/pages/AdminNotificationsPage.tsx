@@ -34,7 +34,7 @@ export function AdminNotificationsPage() {
     }
   };
 
-  // ── Single send (transactional-style — always synchronous) ─────────────────
+  // ── Single send (routes through QUEUE_TRANSACTIONAL_DRIVER when set) ───────
   const [sendForm, setSendForm] = useState({
     userId: "",
     type: "system" as (typeof TYPES)[number],
@@ -42,10 +42,14 @@ export function AdminNotificationsPage() {
     title: "",
     body: "",
   });
+  const [sendEmail, setSendEmail] = useState("");
   const onSend = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      await sendAction.run(sendForm);
+      await sendAction.run({
+        ...sendForm,
+        data: sendForm.channel === "email" ? { email: sendEmail } : undefined,
+      });
       toast.success("Notification sent");
     } catch {
       /* surfaced below */
@@ -116,7 +120,13 @@ export function AdminNotificationsPage() {
       </div>
 
       <div className="card flex flex-col gap-3">
-        <h3 className="text-sm font-semibold">2. Send to one user (synchronous)</h3>
+        <h3 className="text-sm font-semibold">2. Send to one user (queue routing)</h3>
+        <p className="text-xs text-slate-500">
+          Email-channel sends route through <code>QUEUE_TRANSACTIONAL_DRIVER</code> when
+          it's configured — a single admin-triggered notification is treated the same as
+          welcome/verify/reset/OTP email (reliability-sensitive, low-volume). Push/in-app/
+          silent channels, and email with no queue configured, send synchronously instead.
+        </p>
         <form onSubmit={onSend} className="flex flex-col gap-3">
           <div>
             <label className="label">User</label>
@@ -166,6 +176,19 @@ export function AdminNotificationsPage() {
               </select>
             </div>
           </div>
+          {sendForm.channel === "email" && (
+            <div>
+              <label className="label">Recipient email</label>
+              <input
+                className="input"
+                type="email"
+                required
+                placeholder="recipient@example.com"
+                value={sendEmail}
+                onChange={(e) => setSendEmail(e.target.value)}
+              />
+            </div>
+          )}
           <div>
             <label className="label">Title</label>
             <input

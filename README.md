@@ -691,7 +691,7 @@ reliability-sensitive transactional email, Kafka for high-throughput
 promotional/bulk email:
 
 ```env
-QUEUE_TRANSACTIONAL_DRIVER=rabbitmq   # welcome/verify/reset/OTP email
+QUEUE_TRANSACTIONAL_DRIVER=rabbitmq   # welcome/verify/reset/OTP email + admin "send to one user"
 QUEUE_PROMOTIONAL_DRIVER=kafka        # NotificationService.Broadcast's email channel
 ```
 

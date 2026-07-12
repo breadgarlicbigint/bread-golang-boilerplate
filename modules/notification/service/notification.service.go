@@ -23,6 +23,15 @@ const (
 	prefsCol   = "notification_preferences"
 )
 
+// TransactionalEmailQueue enqueues a single, reliability-sensitive email for
+// async delivery, routed (see pkg/queue/router) to whichever backend
+// QUEUE_TRANSACTIONAL_DRIVER selects — same shape as modules/user/service's
+// EmailQueue. *router.Router satisfies this. Optional — a nil queue falls
+// back to sending synchronously via the configured mailer.
+type TransactionalEmailQueue interface {
+	EnqueueEmail(to, subject, html, text string) error
+}
+
 // PromotionalEmailQueue enqueues a bulk/marketing email for async delivery,
 // routed (see pkg/queue/router) to whichever backend QUEUE_PROMOTIONAL_DRIVER
 // selects. *router.Router satisfies this. Optional — a nil queue falls back
@@ -37,17 +46,19 @@ type NotificationService struct {
 	prefsCol   *mongo.Collection
 	fcm        *FCMSender
 	mailer     *email.Mailer
+	emailQueue TransactionalEmailQueue
 	promoQueue PromotionalEmailQueue
 	log        *zap.Logger
 }
 
-func New(db *database.MongoDB, fcm *FCMSender, mailer *email.Mailer, promoQueue PromotionalEmailQueue, log *zap.Logger) *NotificationService {
+func New(db *database.MongoDB, fcm *FCMSender, mailer *email.Mailer, emailQueue TransactionalEmailQueue, promoQueue PromotionalEmailQueue, log *zap.Logger) *NotificationService {
 	return &NotificationService{
 		notifCol:   db.Collection(notifCol),
 		deviceCol:  db.Collection(deviceCol),
 		prefsCol:   db.Collection(prefsCol),
 		fcm:        fcm,
 		mailer:     mailer,
+		emailQueue: emailQueue,
 		promoQueue: promoQueue,
 		log:        log,
 	}
@@ -380,20 +391,32 @@ func (s *NotificationService) sendSilentPush(ctx context.Context, userID uuid.UU
 	return err
 }
 
-func (s *NotificationService) sendEmail(ctx context.Context, userID uuid.UUID, n *notifEntity.Notification) error {
-	if s.mailer == nil {
-		return fmt.Errorf("mailer not configured")
-	}
+func (s *NotificationService) sendEmail(ctx context.Context, _ uuid.UUID, n *notifEntity.Notification) error {
 	// Look up email from a users collection — in real code inject a UserRepo
 	// Placeholder: assumes email was passed via Data["email"]
 	toEmail, _ := n.Data["email"].(string)
 	if toEmail == "" {
-		return fmt.Errorf("email not available for user %s", userID.String())
+		return errors.ErrEmailNotAvailable
+	}
+	subject := n.Title
+	html := fmt.Sprintf("<h2>%s</h2><p>%s</p>", n.Title, n.Body)
+
+	// Route through the transactional queue when configured — async,
+	// reliability-oriented delivery on QUEUE_TRANSACTIONAL_DRIVER (see
+	// pkg/queue/router), same as the welcome/verify/reset/OTP flows. Falls
+	// back to a synchronous send when no queue is wired in (e.g. inside a
+	// worker process, which is the terminal "do the actual send" layer).
+	if s.emailQueue != nil {
+		return s.emailQueue.EnqueueEmail(toEmail, subject, html, n.Body)
+	}
+
+	if s.mailer == nil {
+		return errors.ErrMailerNotConfigured
 	}
 	return s.mailer.Send(ctx, email.Message{
 		To:      []string{toEmail},
-		Subject: n.Title,
-		HTML:    fmt.Sprintf("<h2>%s</h2><p>%s</p>", n.Title, n.Body),
+		Subject: subject,
+		HTML:    html,
 		Text:    n.Body,
 	})
 }
