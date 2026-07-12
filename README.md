@@ -205,6 +205,11 @@ make dev-worker-rabbitmq   # RabbitMQ worker
 make dev-worker-kafka      # Kafka worker
 ```
 
+`make dev`'s build step (`scripts/dev/air-build-api.sh`) regenerates Swagger
+docs on every reload and rebuilds compiled email templates whenever a file
+under `email-templates/src` changed — no separate `make swagger` /
+`make build-emails` needed while iterating on handlers or `.tsx` templates.
+
 ---
 
 ## Key Management

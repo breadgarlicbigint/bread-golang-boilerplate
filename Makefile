@@ -52,7 +52,8 @@ run-worker-kafka: build-worker-kafka
 	@$(BUILD_DIR)/worker-kafka
 
 dev: ensure-modules
-	@echo "▶ Starting hot-reload server (air)"
+	@echo "▶ Starting hot-reload server (air) — regenerates Swagger docs and,"
+	@echo "  when email-templates/src changed, rebuilds email templates on every reload"
 	@GOPATH=$$(go env GOPATH) ; \
 	 if ! command -v air > /dev/null 2>&1 && [ ! -f "$$GOPATH/bin/air" ]; then \
 	   echo "  Installing air..."; \

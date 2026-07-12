@@ -4,11 +4,20 @@ root = "."
 tmp_dir = ".air"
 
 [build]
-  cmd = "go build -o .air/server ./apps/api"
+  # Regenerates Swagger docs and (when email-templates/src changed) the
+  # compiled React Email output before every rebuild — see the script for
+  # details. Keeps docs/swagger and pkg/email/dist in sync with source
+  # automatically during `make dev`, no separate `make swagger` /
+  # `make build-emails` needed while iterating.
+  cmd = "bash scripts/dev/air-build-api.sh"
   bin = ".air/server"
   full_bin = ".air/server"
-  include_ext = ["go", "tpl", "tmpl", "html"]
-  exclude_dir  = ["assets", "tmp", ".air", "vendor", "testdata", "docs"]
+  include_ext = ["go", "tpl", "tmpl", "html", "tsx", "ts"]
+  # exclude_dir only matches root-relative paths (not recursively by
+  # basename), so node_modules/dist-ts have to be spelled out per parent —
+  # otherwise air walks + watches every file under them.
+  exclude_dir  = ["assets", "tmp", ".air", "vendor", "testdata", "docs", "web",
+                   "email-templates/node_modules", "email-templates/dist-ts"]
   exclude_file = []
   exclude_regex = ["_test.go"]
   exclude_unchanged = true

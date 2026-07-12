@@ -24,7 +24,7 @@ make setup              # first-time: keys + .env + build-emails + go mod tidy +
 make docker-up          # start MongoDB rs + Redis + API
 make seed               # populate DB (runs inside Docker network — requires docker-up first)
 make seed-local         # seed against localhost (reads .env via BREAD_CONFIG_FILE)
-make dev                # hot-reload with air
+make dev                # hot-reload with air (also regenerates swagger + rebuilds changed email templates)
 make test               # all unit tests
 make test-coverage      # HTML coverage report → coverage.html
 make swagger            # regenerate Swagger docs (uses go run, no install needed)
@@ -564,6 +564,16 @@ jobQueue.EnqueueEmail(to,subject,html,text)  ──►  Redis (asynq "default" q
 
 6. Run `make build-emails`
 
+**Under `make dev`, step 6 happens automatically:** `scripts/dev/air-build-api.sh`
+(the air build step) checks whether any file under `email-templates/src` is
+newer than `email-templates/.build-stamp` (a marker touched after the last
+build) and, only if so, runs `npm install`/`npm run build` before the Go
+build — so editing a `.tsx` template and saving is enough to pick up the
+change on the next hot reload, no separate `make build-emails` needed. This
+only runs for `make dev` (`.air.toml`); the worker air configs
+(`.air.worker*.toml`) don't render templates so they skip it. Delete
+`email-templates/.build-stamp` to force a rebuild on the next save.
+
 ---
 
 ## Background Job Queue Backends (Redis / RabbitMQ / Kafka)
@@ -801,7 +811,12 @@ All handler methods must have Swagger annotations:
 paths must include `/v1/` prefix. Never set `@BasePath /v1` — this causes
 doubled `/v1/v1/` URLs in Swagger UI.
 
-Run `make swagger` after adding/changing any annotations.
+Run `make swagger` after adding/changing any annotations. Under `make dev`
+this happens automatically on every hot reload — `.air.toml`'s build step is
+`scripts/dev/air-build-api.sh`, which runs `swag init` before every `go
+build`, so annotation changes show up in Swagger UI on the next save without
+a manual `make swagger`. Only `make dev` does this; `make run`/`make build`
+and the worker's `make dev-worker*` targets don't touch Swagger.
 
 ---
 
@@ -1065,6 +1080,8 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | Jobs enqueued but never processed, no error anywhere | `QUEUE_DRIVER` doesn't match the worker process actually running — e.g. `QUEUE_DRIVER=rabbitmq` in `.env` but `make docker-worker` (Redis) is what's running. Start the worker whose profile matches `QUEUE_DRIVER` (`docker-worker`/`docker-rabbitmq`/`docker-kafka`) |
 | Importing `asynq`, `amqp091-go`, or `kafka-go` directly in a `modules/*/service` file | Depend on the `EmailQueue` interface only — the concrete `Publisher` (`worker.Client` / `rabbitmq.Publisher` / `kafka.Publisher`) is chosen once in `apps/api/app/app.go`'s `buildJobQueue` |
 | `go: missing go.sum entry` for `amqp091-go` or `kafka-go` after a fresh clone | Run `make deps` (go get both client libs + `go mod tidy`) |
+| `make dev` feels slow on every save, even for unrelated changes | Expected — `scripts/dev/air-build-api.sh` runs `swag init` (a few seconds) before every rebuild by design, so Swagger docs never go stale. Email templates only rebuild when `email-templates/src` actually changed |
+| Edited an email `.tsx` under `make dev` but the rendered HTML didn't change | Check `.air/build.log` for an `npm run build` failure; also confirm Node.js is on `PATH` — the script skips the email rebuild (with a warning) if `node` isn't found, but still regenerates Swagger and builds the Go binary |
 
 ---
 
