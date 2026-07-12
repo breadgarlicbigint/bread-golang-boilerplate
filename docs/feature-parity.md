@@ -80,7 +80,7 @@ Mapping of every feature in `andrechristikan/ack-nestjs-boilerplate` to this Go 
 | i18n (x-custom-lang) | ✅ | ✅ | `pkg/i18n/i18n.go`, `locales/en.json`, `locales/id.json` |
 | Hot Reload | ✅ | ✅ | air + `.air.toml` |
 | Code Quality (ESLint equiv.) | ✅ | ✅ | golangci-lint + `.golangci.yml` |
-| Database Seeding | ✅ | ✅ | `scripts/seed/main.go` |
+| Database Seeding | ✅ | ✅ | `scripts/seed/` (one file per module) |
 | TypeScript | ✅ | N/A | Go is statically typed |
 
 ---

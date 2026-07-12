@@ -238,7 +238,7 @@ seed:
 	    -e MONGO_URI="mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0" \
 	    -e MONGO_DB_NAME="bread_boilerplate" \
 	    golang:1.23-alpine \
-	    sh -c "apk add --no-cache git ca-certificates > /dev/null 2>&1 && go run ./scripts/seed/main.go"
+	    sh -c "apk add --no-cache git ca-certificates > /dev/null 2>&1 && go run ./scripts/seed"
 
 # Run seed/migrate directly on host — loads .env, then applies overrides.
 # Precedence (highest → lowest):
@@ -259,7 +259,7 @@ migrate-indexes-local:
 seed-local:
 	@echo "▶ Seeding database (reads $(ENV_FILE))"
 	@[ -f "$(ENV_FILE)" ] && echo "  env file: $(ENV_FILE)" || echo "  ⚠  $(ENV_FILE) not found — using Viper defaults"
-	BREAD_CONFIG_FILE=$(ENV_FILE) go run ./scripts/seed/main.go
+	BREAD_CONFIG_FILE=$(ENV_FILE) go run ./scripts/seed
 
 # ── Keys ──────────────────────────────────────────────────────────────────────
 generate-keys:

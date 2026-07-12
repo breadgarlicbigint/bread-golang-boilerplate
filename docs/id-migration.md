@@ -122,7 +122,7 @@ db.users.find({}).forEach(doc => {
 | `modules/*/handler/*.go` | `uuid.Parse(c.Param("id"))` → `primitive.ObjectIDFromHex(c.Param("id"))` |
 | `modules/auth/service/auth.service.go` | `.String()` → `.Hex()` in `issueTokenPair` |
 | `shared/middleware/auth.go` | `mustUserID` helper (if it calls `uuid.Parse`) |
-| `scripts/seed/main.go` | `uuid.New()` → `primitive.NewObjectID()` |
+| `scripts/seed/*.go` | `uuid.New()` → `primitive.NewObjectID()` (mainly `role.go`, `user.go`, `featureflag.go`, `appversion.go`) |
 
 ---
 

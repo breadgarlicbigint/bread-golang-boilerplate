@@ -196,7 +196,7 @@ make help             ← full target list
 `make seed` and `make migrate-indexes` work like this:
 
 ```
-Host ──► docker run --network <bread-net> golang:1.23-alpine go run ./scripts/seed/main.go
+Host ──► docker run --network <bread-net> golang:1.23-alpine go run ./scripts/seed
                          │
                     bread-net network
                          │
@@ -222,5 +222,5 @@ MONGO_URI="mongodb://user:pass@myhost:27017/?authSource=admin" make seed-local
 ```bash
 MONGO_URI="mongodb://localhost:27017/?directConnection=true" \
 MONGO_DB_NAME="mydb" \
-go run ./scripts/seed/main.go
+go run ./scripts/seed
 ```

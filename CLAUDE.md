@@ -1004,7 +1004,7 @@ In Docker, `MONGO_URI` and `REDIS_HOST` are always overridden by
 # Override with:
 make seed-local ENV_FILE=.env.staging
 # Or directly:
-BREAD_CONFIG_FILE=/path/to/.env go run ./scripts/seed/main.go
+BREAD_CONFIG_FILE=/path/to/.env go run ./scripts/seed
 ```
 
 ---
@@ -1184,7 +1184,7 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `pkg/email/factory.go` | `NewMailerFromConfig` — picks SES vs SMTP via `MAIL_DRIVER` |
 | `locales/en.json` + `locales/id.json` | All i18n strings including email tokens |
 | `scripts/migrate/main.go` | All MongoDB index definitions |
-| `scripts/seed/main.go` | Default data (roles, users, flags, app versions) |
+| `scripts/seed/` | Default data — one file per module (`role.go`, `user.go`, `featureflag.go`, `appversion.go`), wired together by `main.go` |
 | `docs/id-migration.md` | How to switch between UUID and ObjectID |
 | `docs/email-i18n.md` | Email template architecture documentation |
 | `docs/feature-parity.md` | Full NestJS ↔ Go feature mapping |
