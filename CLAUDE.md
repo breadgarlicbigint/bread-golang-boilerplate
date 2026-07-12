@@ -592,9 +592,10 @@ transports, selected by `QUEUE_DRIVER`:
 `Consumer`, `Delivery`, `HandlerFunc`) that the RabbitMQ and Kafka packages
 implement — it mirrors the shape of the Redis/Asynq implementation in
 `pkg/worker` so all three are drop-in parallel. Task-type strings
-(`email:send`, `notification:send`, `notification:broadcast`,
-`session:cleanup`) and JSON payload shapes are identical across all three, so
-switching `QUEUE_DRIVER` doesn't change what a service enqueues.
+(`email:send`, `email:send:promotional`, `notification:send`,
+`notification:broadcast`, `session:cleanup`) and JSON payload shapes are
+identical across all three, so switching `QUEUE_DRIVER` doesn't change what a
+service enqueues.
 
 **`QUEUE_DRIVER` MUST match the worker process you actually run** — the API
 only publishes jobs, it never consumes them. `apps/api/app/app.go`'s
@@ -613,6 +614,46 @@ make docker-rabbitmq     # or: make run-worker-rabbitmq  # or: make dev-worker-r
 # Kafka — broker at localhost:9094 (host) / kafka:9092 (in-network)
 make docker-kafka        # or: make run-worker-kafka     # or: make dev-worker-kafka
 ```
+
+### Per-workload routing (`pkg/queue/router`)
+
+`QUEUE_DRIVER` picks the *default* backend for every task type. Two optional
+overrides let different workloads ride different brokers at the same time,
+instead of picking one broker for everything:
+
+```env
+QUEUE_TRANSACTIONAL_DRIVER=rabbitmq   # queue.TaskSendEmail — reliability-sensitive
+QUEUE_PROMOTIONAL_DRIVER=kafka        # queue.TaskSendPromotionalEmail — throughput-sensitive
+```
+
+Both are blank by default, meaning "fall back to `QUEUE_DRIVER`" — today's
+single-backend behavior is unchanged unless you opt in. `apps/api/app/app.go`'s
+`buildJobQueue` builds a `queue.Publisher` for each distinct driver referenced
+(`buildPublisher`) and wires them into a `*router.Router`, which itself
+satisfies `queue.Publisher` and is what `App.jobQueue` actually holds — every
+caller (`EmailQueue`, `PromotionalEmailQueue`) is unaware routing is
+happening. If a transactional/promotional override fails to connect, it logs
+a warning and falls back to the default driver rather than disabling jobs
+outright; only a default-driver failure disables jobs entirely (`nil`).
+
+- `EnqueueEmail` (welcome/verify/reset/OTP — `modules/user/service`,
+  `modules/auth/service`) publishes `queue.TaskSendEmail` → routed by
+  `QUEUE_TRANSACTIONAL_DRIVER`.
+- `EnqueuePromotionalEmail` publishes `queue.TaskSendPromotionalEmail` →
+  routed by `QUEUE_PROMOTIONAL_DRIVER`. The one real caller today is
+  `NotificationService.Broadcast`'s email channel
+  (`modules/notification/service`) — when a promotional queue is configured,
+  broadcasting to many users enqueues one job per recipient instead of
+  blocking the HTTP request on N sequential SMTP/SES sends; `success`/`failed`
+  in the response then mean "queued", not "delivered". Without a promotional
+  queue configured, `Broadcast` keeps the original synchronous per-user path.
+- Both task types share one `EmailTaskHandler` on every worker — routing only
+  changes which broker a job lands on, not how it's consumed. **Whichever
+  broker(s) you route to must have a worker actually running against them**,
+  same rule as `QUEUE_DRIVER` — `make docker-queues` starts all three
+  (Redis + RabbitMQ + Kafka workers) at once for exercising a split like the
+  example above; `make docker-worker`/`docker-rabbitmq`/`docker-kafka`
+  individually only start one.
 
 `make deps` runs `go get` for the RabbitMQ (`rabbitmq/amqp091-go`) and Kafka
 (`segmentio/kafka-go`) client libraries and syncs `go.sum` — both are
@@ -825,13 +866,26 @@ and the worker's `make dev-worker*` targets don't touch Swagger.
 `web/` is a React + TypeScript SPA (Vite, Tailwind, React Router) that
 exercises every HTTP-exposed endpoint of `apps/api` — auth, 2FA, passkeys
 (real WebAuthn ceremonies via `@simplewebauthn/browser`), mobile OTP,
-notifications, admin users/app-versions/analytics, health — plus a generic
-raw-request API console, an **i18n Compare** page (`/i18n-compare`) that
-fires one request twice with different `x-custom-lang` headers to compare
-translated responses side by side, and a client-side activity log for
-anything not covered by a dedicated page. It talks to the API directly over
-`fetch` (CORS already allows `*`); no backend code changes were needed to
-support it.
+notifications, admin users/roles/app-versions/analytics/notifications,
+health — plus a generic raw-request API console, an **i18n Compare** page
+(`/i18n-compare`) that fires one request twice with different
+`x-custom-lang` headers to compare translated responses side by side, and a
+client-side activity log for anything not covered by a dedicated page. It
+talks to the API directly over `fetch` (CORS already allows `*`); no backend
+code changes were needed to support it.
+
+**Admin → Notifications** (`/admin/notifications`,
+`web/src/pages/AdminNotificationsPage.tsx`) is the page for manually testing
+queue routing: a **Test email** form (`test-email`, synchronous, surfaces the
+raw transport error), a **Send to one user** form (`admin/notifications/send`,
+always synchronous), and a **Broadcast** form (`admin/notifications/broadcast`)
+with a user-checkbox picker — broadcasting to the `email` channel is the one
+real trigger for `EnqueuePromotionalEmail`/`QUEUE_PROMOTIONAL_DRIVER`, so it's
+the fastest way to see the transactional/promotional split in action: create
+a user from **Admin → Users** first (fires the transactional welcome email)
+and watch which worker log picks it up, then broadcast to the `email`
+channel and watch a *different* worker (whichever runs
+`QUEUE_PROMOTIONAL_DRIVER`) pick that one up instead.
 
 ```bash
 make web-install     # cd web && npm install
@@ -1078,6 +1132,7 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | Enqueuing email from a service by importing `asynq` / task-type strings | Depend on the `EmailQueue` interface (`EnqueueEmail(to,subject,html,text)`) — `worker.Client` implements it; render via `LocalizedMailer` then enqueue |
 | Adding a request-triggered email as a synchronous `localMailer.Send*` call | Only diagnostics (e.g. `test-email`) send synchronously — enqueue everything else via `jobQueue.EnqueueEmail` so a slow/failed SMTP send doesn't block or fail the HTTP request |
 | Jobs enqueued but never processed, no error anywhere | `QUEUE_DRIVER` doesn't match the worker process actually running — e.g. `QUEUE_DRIVER=rabbitmq` in `.env` but `make docker-worker` (Redis) is what's running. Start the worker whose profile matches `QUEUE_DRIVER` (`docker-worker`/`docker-rabbitmq`/`docker-kafka`) |
+| Set `QUEUE_TRANSACTIONAL_DRIVER`/`QUEUE_PROMOTIONAL_DRIVER` but promotional/transactional jobs still silent | Same rule as `QUEUE_DRIVER`, per-route — the worker for THAT driver must be running too. `make docker-queues` starts all three at once instead of picking one via `docker-worker`/`docker-rabbitmq`/`docker-kafka` |
 | Importing `asynq`, `amqp091-go`, or `kafka-go` directly in a `modules/*/service` file | Depend on the `EmailQueue` interface only — the concrete `Publisher` (`worker.Client` / `rabbitmq.Publisher` / `kafka.Publisher`) is chosen once in `apps/api/app/app.go`'s `buildJobQueue` |
 | `go: missing go.sum entry` for `amqp091-go` or `kafka-go` after a fresh clone | Run `make deps` (go get both client libs + `go mod tidy`) |
 | `make dev` feels slow on every save, even for unrelated changes | Expected — `scripts/dev/air-build-api.sh` runs `swag init` (a few seconds) before every rebuild by design, so Swagger docs never go stale. Email templates only rebuild when `email-templates/src` actually changed |
@@ -1100,6 +1155,7 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `pkg/worker/worker.go` | Asynq (Redis) client/server + task types; `Client.EnqueueEmail` is the transactional-email entry point |
 | `pkg/worker/tasks/tasks.go` | Task handlers run by the Redis/Asynq worker (`email:send`, session cleanup, …) |
 | `pkg/queue/queue.go` | Backend-agnostic `Publisher`/`Consumer` contract shared by RabbitMQ + Kafka; `EmailQueue` callers depend on this shape |
+| `pkg/queue/router/router.go` | Routes task types to different `Publisher`s (`QUEUE_TRANSACTIONAL_DRIVER`/`QUEUE_PROMOTIONAL_DRIVER`); itself satisfies `queue.Publisher` |
 | `pkg/queue/rabbitmq/rabbitmq.go` | RabbitMQ `Publisher`/`Consumer` impl (AMQP exchange + durable queue) |
 | `pkg/queue/kafka/kafka.go` | Kafka `Publisher`/`Consumer` impl (topic + consumer group, `segmentio/kafka-go`) |
 | `pkg/queue/tasks/tasks.go` | Task handlers shared by `apps/worker-rabbitmq` and `apps/worker-kafka` |

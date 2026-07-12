@@ -23,23 +23,33 @@ const (
 	prefsCol   = "notification_preferences"
 )
 
-type NotificationService struct {
-	notifCol  *mongo.Collection
-	deviceCol *mongo.Collection
-	prefsCol  *mongo.Collection
-	fcm       *FCMSender
-	mailer    *email.Mailer
-	log       *zap.Logger
+// PromotionalEmailQueue enqueues a bulk/marketing email for async delivery,
+// routed (see pkg/queue/router) to whichever backend QUEUE_PROMOTIONAL_DRIVER
+// selects. *router.Router satisfies this. Optional — a nil queue falls back
+// to sending each recipient synchronously, same as before this existed.
+type PromotionalEmailQueue interface {
+	EnqueuePromotionalEmail(to, subject, html, text string) error
 }
 
-func New(db *database.MongoDB, fcm *FCMSender, mailer *email.Mailer, log *zap.Logger) *NotificationService {
+type NotificationService struct {
+	notifCol   *mongo.Collection
+	deviceCol  *mongo.Collection
+	prefsCol   *mongo.Collection
+	fcm        *FCMSender
+	mailer     *email.Mailer
+	promoQueue PromotionalEmailQueue
+	log        *zap.Logger
+}
+
+func New(db *database.MongoDB, fcm *FCMSender, mailer *email.Mailer, promoQueue PromotionalEmailQueue, log *zap.Logger) *NotificationService {
 	return &NotificationService{
-		notifCol:  db.Collection(notifCol),
-		deviceCol: db.Collection(deviceCol),
-		prefsCol:  db.Collection(prefsCol),
-		fcm:       fcm,
-		mailer:    mailer,
-		log:       log,
+		notifCol:   db.Collection(notifCol),
+		deviceCol:  db.Collection(deviceCol),
+		prefsCol:   db.Collection(prefsCol),
+		fcm:        fcm,
+		mailer:     mailer,
+		promoQueue: promoQueue,
+		log:        log,
 	}
 }
 
@@ -144,7 +154,17 @@ func (s *NotificationService) Send(ctx context.Context, req dto.SendRequest) err
 }
 
 // Broadcast sends to multiple users concurrently (e.g. admin announcements).
+// Email broadcasts are throughput-sensitive — potentially thousands of
+// recipients — so when a promotional queue is configured they're enqueued
+// for async delivery instead of blocking this call on N sequential SMTP/SES
+// sends; success/failed then mean "queued", not "delivered". Push/in-app/
+// silent channels, and email when no promotional queue is configured, keep
+// the original synchronous per-user path.
 func (s *NotificationService) Broadcast(ctx context.Context, req dto.BroadcastRequest) (int, int, error) {
+	if req.Channel == notifEntity.ChannelEmail && s.promoQueue != nil {
+		return s.broadcastEmailAsync(req)
+	}
+
 	var success, failed int
 	for _, uid := range req.UserIDs {
 		err := s.Send(ctx, dto.SendRequest{
@@ -160,6 +180,31 @@ func (s *NotificationService) Broadcast(ctx context.Context, req dto.BroadcastRe
 		} else {
 			success++
 		}
+	}
+	return success, failed, nil
+}
+
+// broadcastEmailAsync enqueues one promotional-email job per recipient via
+// s.promoQueue (routed to QUEUE_PROMOTIONAL_DRIVER — see pkg/queue/router)
+// instead of sending synchronously. Recipient address resolution matches
+// Send/sendEmail today: every recipient shares req.Data["email"] since
+// per-user address lookup isn't wired in yet (no UserRepo dependency here).
+func (s *NotificationService) broadcastEmailAsync(req dto.BroadcastRequest) (int, int, error) {
+	toEmail, _ := req.Data["email"].(string)
+	html := fmt.Sprintf("<h2>%s</h2><p>%s</p>", req.Title, req.Body)
+
+	var success, failed int
+	for range req.UserIDs {
+		if toEmail == "" {
+			failed++
+			continue
+		}
+		if err := s.promoQueue.EnqueuePromotionalEmail(toEmail, req.Title, html, req.Body); err != nil {
+			s.log.Warn("promotional email enqueue failed", zap.String("to", toEmail), zap.Error(err))
+			failed++
+			continue
+		}
+		success++
 	}
 	return success, failed, nil
 }

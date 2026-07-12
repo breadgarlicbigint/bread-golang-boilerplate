@@ -9,11 +9,13 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-// Task type constants — use these as the task "type" string.
+// Task type constants — use these as the task "type" string. Kept identical
+// to pkg/queue's constants so payloads are interchangeable across transports.
 const (
-	TaskSendEmail          = "email:send"
-	TaskSendPushNotif      = "notification:push"
-	TaskProcessUpload      = "upload:process"
+	TaskSendEmail              = "email:send"
+	TaskSendPromotionalEmail   = "email:send:promotional"
+	TaskSendPushNotif          = "notification:push"
+	TaskProcessUpload          = "upload:process"
 	TaskCleanupExpiredSessions = "session:cleanup"
 )
 
@@ -72,6 +74,20 @@ func (c *Client) EnqueueEmail(to, subject, html, text string) error {
 		SendEmailPayload{To: to, Subject: subject, Body: html, Text: text},
 		asynq.MaxRetry(5),
 		asynq.Queue("default"),
+	)
+}
+
+// EnqueuePromotionalEmail queues a bulk/marketing email on the "low" priority
+// queue with fewer retries than EnqueueEmail — promotional traffic favors
+// throughput over guaranteed delivery, so it shouldn't compete with (or retry
+// as hard as) transactional email on the same broker. See pkg/queue/router
+// for routing this task type to an entirely different backend instead.
+func (c *Client) EnqueuePromotionalEmail(to, subject, html, text string) error {
+	return c.Enqueue(
+		TaskSendPromotionalEmail,
+		SendEmailPayload{To: to, Subject: subject, Body: html, Text: text},
+		asynq.MaxRetry(2),
+		asynq.Queue("low"),
 	)
 }
 

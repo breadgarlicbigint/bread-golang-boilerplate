@@ -60,7 +60,11 @@ func main() {
 		}
 	}
 
-	notifService := notifSvc.New(mongo, fcmSender, mailer, zapLog)
+	// promoQueue is nil here: a worker is the terminal "do the actual send"
+	// layer, so Broadcast should run its synchronous per-user path directly
+	// rather than re-enqueue — only the API (apps/api/app/app.go) routes
+	// broadcast email through the promotional queue.
+	notifService := notifSvc.New(mongo, fcmSender, mailer, nil, zapLog)
 
 	// Worker server
 	redisAddr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)

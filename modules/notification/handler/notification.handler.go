@@ -158,6 +158,10 @@ func (h *NotificationHandler) AdminSend(c *gin.Context) {
 	response.OKI18n(c, "notification.sendSuccess", nil)
 }
 
+// Broadcast fans a notification out to multiple users. For the email
+// channel, when a promotional queue is configured (QUEUE_PROMOTIONAL_DRIVER),
+// success/failed report enqueue results, not delivery confirmation — see
+// NotificationService.Broadcast.
 func (h *NotificationHandler) Broadcast(c *gin.Context) {
 	var req notifDTO.BroadcastRequest
 	if !validate.BindJSON(c, &req) {

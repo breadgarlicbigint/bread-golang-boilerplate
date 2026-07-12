@@ -146,17 +146,26 @@ type WorkerConfig struct {
 	Queues      string `mapstructure:"WORKER_QUEUES"`
 }
 
-// QueueConfig selects which transport the API enqueues background jobs onto.
-// It MUST match the worker that is actually running:
+// QueueConfig selects which transport(s) the API enqueues background jobs
+// onto. Driver is the default for every task type; TransactionalDriver and
+// PromotionalDriver override it for queue.TaskSendEmail and
+// queue.TaskSendPromotionalEmail respectively, letting different workloads
+// use different brokers (e.g. RabbitMQ for reliability-sensitive
+// transactional email, Kafka for high-throughput promotional/bulk email) —
+// see pkg/queue/router. Leave either blank to fall back to Driver (today's
+// single-backend behavior, unchanged).
+//
+// Every driver referenced by ANY of these three fields MUST have its
+// matching worker process running, or jobs routed to it are published to a
+// broker nobody consumes and never run:
 //
 //	redis    → apps/worker          (Redis/Asynq)   — default
 //	rabbitmq → apps/worker-rabbitmq  (pkg/queue/rabbitmq)
 //	kafka    → apps/worker-kafka     (pkg/queue/kafka)
-//
-// A mismatch (e.g. QUEUE_DRIVER=redis while only the RabbitMQ worker runs)
-// means jobs are published to a broker nobody consumes, so they never run.
 type QueueConfig struct {
-	Driver string `mapstructure:"QUEUE_DRIVER"` // redis | rabbitmq | kafka
+	Driver              string `mapstructure:"QUEUE_DRIVER"`               // redis | rabbitmq | kafka
+	TransactionalDriver string `mapstructure:"QUEUE_TRANSACTIONAL_DRIVER"` // overrides Driver for TaskSendEmail; blank = fall back to Driver
+	PromotionalDriver   string `mapstructure:"QUEUE_PROMOTIONAL_DRIVER"`   // overrides Driver for TaskSendPromotionalEmail; blank = fall back to Driver
 }
 
 // RabbitMQConfig configures the AMQP queue-job/worker backend (pkg/queue/rabbitmq).
@@ -342,7 +351,9 @@ func Load() (*Config, error) {
 		Queues:      v.GetString("WORKER_QUEUES"),
 	}
 	cfg.Queue = QueueConfig{
-		Driver: v.GetString("QUEUE_DRIVER"),
+		Driver:              v.GetString("QUEUE_DRIVER"),
+		TransactionalDriver: v.GetString("QUEUE_TRANSACTIONAL_DRIVER"),
+		PromotionalDriver:   v.GetString("QUEUE_PROMOTIONAL_DRIVER"),
 	}
 	cfg.RabbitMQ = RabbitMQConfig{
 		URL:      v.GetString("RABBITMQ_URL"),

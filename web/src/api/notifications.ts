@@ -94,7 +94,24 @@ export interface AdminBroadcastRequest {
   data?: Record<string, unknown>;
 }
 
-export async function adminBroadcast(payload: AdminBroadcastRequest): Promise<{ sent: number; failed: number } | unknown> {
-  const res = await api.post("/v1/admin/notifications/broadcast", payload);
+export interface AdminBroadcastResult {
+  success: number;
+  failed: number;
+}
+
+export async function adminBroadcast(payload: AdminBroadcastRequest): Promise<AdminBroadcastResult> {
+  const res = await api.post<AdminBroadcastResult>("/v1/admin/notifications/broadcast", payload);
+  return res.data;
+}
+
+export interface TestEmailResult {
+  sent: boolean;
+  error?: string;
+}
+
+/** Diagnostic — sends synchronously and returns the raw transport error, so
+ * MAIL_DRIVER config can be verified without a worker running. */
+export async function testEmail(to: string): Promise<TestEmailResult> {
+  const res = await api.post<TestEmailResult>("/v1/admin/notifications/test-email", { to });
   return res.data;
 }

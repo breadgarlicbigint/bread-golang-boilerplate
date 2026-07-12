@@ -59,6 +59,9 @@ export function Layout() {
             <NavLink to="/admin/analytics" className={linkClass}>
               Analytics
             </NavLink>
+            <NavLink to="/admin/notifications" className={linkClass}>
+              Notifications
+            </NavLink>
           </NavSection>
         )}
 

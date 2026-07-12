@@ -4,7 +4,7 @@
         run-worker run-worker-rabbitmq run-worker-kafka \
         dev-worker dev-worker-rabbitmq dev-worker-kafka \
         docker-up docker-down docker-logs docker-rebuild \
-        docker-worker docker-rabbitmq docker-kafka \
+        docker-worker docker-rabbitmq docker-kafka docker-queues \
         migrate-indexes migrate-indexes-local seed seed-local generate-keys swagger generate \
         build-emails web-install web-dev setup clean help
 
@@ -180,6 +180,18 @@ docker-rabbitmq: mod-sync
 docker-kafka: mod-sync
 	@echo "▶ Starting full stack + Kafka broker + Kafka worker"
 	docker compose --profile kafka up -d --build
+	@echo "  ✅  Kafka broker → localhost:9094 (host) / kafka:9092 (in-network)"
+
+# docker-queues: brings up ALL THREE worker profiles at once (Redis + RabbitMQ
+# + Kafka, each with its broker and worker container) — unlike docker-worker/
+# docker-rabbitmq/docker-kafka above, which are mutually exclusive choices of
+# ONE backend. Needed to actually exercise QUEUE_TRANSACTIONAL_DRIVER /
+# QUEUE_PROMOTIONAL_DRIVER routing to two different brokers simultaneously
+# (see "Background Job Queue Backends" in CLAUDE.md).
+docker-queues: mod-sync
+	@echo "▶ Starting full stack + all three queue workers (Redis, RabbitMQ, Kafka)"
+	docker compose --profile worker --profile rabbitmq --profile kafka up -d --build
+	@echo "  ✅  RabbitMQ UI → http://localhost:15672 (guest/guest)"
 	@echo "  ✅  Kafka broker → localhost:9094 (host) / kafka:9092 (in-network)"
 
 docker-down:
@@ -366,6 +378,7 @@ help:
 	@echo "    make docker-worker   Start full stack + Redis/Asynq worker"
 	@echo "    make docker-rabbitmq Start full stack + RabbitMQ broker + worker"
 	@echo "    make docker-kafka    Start full stack + Kafka broker + worker"
+	@echo "    make docker-queues   Start full stack + ALL THREE workers (for split transactional/promotional routing)"
 	@echo "    make docker-down     Stop and remove all containers"
 	@echo "    make docker-logs     Tail app logs"
 	@echo "    make docker-rebuild  Rebuild and restart only the app container"

@@ -51,18 +51,11 @@ import (
 	jwtpkg       "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/jwt"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/sms"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/worker"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/queue"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/queue/kafka"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/queue/rabbitmq"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/queue/router"
 )
-
-// queueBackend is the subset of a queue transport the API needs: enqueue jobs
-// and close on shutdown. *worker.Client (Redis/Asynq), *rabbitmq.Publisher and
-// *kafka.Publisher all satisfy it, so QUEUE_DRIVER can swap the backend without
-// touching any caller (services depend on the smaller EmailQueue interface).
-type queueBackend interface {
-	EnqueueEmail(to, subject, html, text string) error
-	Close() error
-}
 
 // App holds all wired-up dependencies and the HTTP server.
 type App struct {
@@ -72,7 +65,7 @@ type App struct {
 	rdb        *redis.Client
 	engine     *gin.Engine
 	server     *http.Server
-	jobQueue   queueBackend
+	jobQueue   queue.Publisher
 }
 
 // New wires all modules and returns a ready-to-start App.
@@ -187,7 +180,7 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 			log.Warn("app: Firebase FCM init failed — push disabled", zap.Error(err))
 		}
 	}
-	notifService := notifSvc.New(mongo, fcmSender, mailer, log)
+	notifService := notifSvc.New(mongo, fcmSender, mailer, jobQueue, log)
 
 	// ── App versioning ────────────────────────────────────────────────────────
 	versionService := appverSvc.New(mongo)
@@ -306,50 +299,94 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	return app, nil
 }
 
-// buildJobQueue constructs the enqueue-side publisher selected by QUEUE_DRIVER.
-// It must line up with the worker process that is actually running:
+// buildPublisher constructs a single queue.Publisher for the given driver
+// name. Redis client creation is lazy (never errors); RabbitMQ/Kafka dial
+// eagerly — a connection failure is logged and returns nil, letting the
+// caller decide whether that's fatal (default driver) or just a fallback
+// (a transactional/promotional override that didn't come up).
+func buildPublisher(driver string, cfg *config.Config, log *zap.Logger) queue.Publisher {
+	switch driver {
+	case "rabbitmq":
+		pub, err := rabbitmq.NewPublisher(cfg.RabbitMQ)
+		if err != nil {
+			log.Error("queue: rabbitmq publisher init failed", zap.Error(err))
+			return nil
+		}
+		log.Info("queue: rabbitmq publisher ready", zap.String("exchange", cfg.RabbitMQ.Exchange))
+		return pub
+	case "kafka":
+		pub, err := kafka.NewPublisher(cfg.Kafka)
+		if err != nil {
+			log.Error("queue: kafka publisher init failed", zap.Error(err))
+			return nil
+		}
+		log.Info("queue: kafka publisher ready", zap.String("topic", cfg.Kafka.Topic))
+		return pub
+	case "redis", "":
+		log.Info("queue: redis/asynq publisher ready")
+		return asynqPublisherAdapter{worker.NewClient(
+			fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+			cfg.Redis.Password, cfg.Redis.DB,
+		)}
+	default:
+		log.Error("queue: unknown driver", zap.String("driver", driver))
+		return nil
+	}
+}
+
+// buildJobQueue wires the enqueue-side publisher(s) the API uses. Driver
+// selects the default backend for every task type; TransactionalDriver and
+// PromotionalDriver (both optional, see shared/config QueueConfig) pin
+// specific workloads to a different backend — e.g. RabbitMQ for
+// reliability-sensitive transactional email (queue.TaskSendEmail), Kafka for
+// high-throughput promotional/bulk email (queue.TaskSendPromotionalEmail) —
+// via pkg/queue/router. Every driver referenced by any of the three fields
+// MUST have its matching worker process running:
 //
 //	redis (default) → apps/worker           (Redis/Asynq)
 //	rabbitmq        → apps/worker-rabbitmq
 //	kafka           → apps/worker-kafka
 //
-// Redis client creation is lazy (never errors). RabbitMQ/Kafka dial eagerly; a
-// connection failure is logged and returns a nil queue — every caller treats a
-// nil queue as "background jobs disabled" (emails are skipped, not lost to a
-// crash), matching the nil-mailer convention.
+// A transactional/promotional override that fails to connect logs a warning
+// and falls back to the default driver rather than disabling background jobs
+// outright — only a default-driver failure disables jobs entirely (nil),
+// matching the nil-mailer convention every caller already treats as "skip
+// silently".
 //
-// NOTE: QUEUE_DRIVER is read once at startup. Changing it in .env requires a
+// NOTE: drivers are read once at startup. Changing them in .env requires a
 // full process restart — under `make dev` (air) a .env-only change does NOT
 // rebuild (exclude_unchanged), so restart air after switching drivers.
-func buildJobQueue(cfg *config.Config, log *zap.Logger) queueBackend {
-	switch cfg.Queue.Driver {
-	case "rabbitmq":
-		pub, err := rabbitmq.NewPublisher(cfg.RabbitMQ)
-		if err != nil {
-			log.Error("queue: rabbitmq publisher init failed — background jobs disabled", zap.Error(err))
-			return nil
-		}
-		log.Info("queue: publishing via rabbitmq", zap.String("exchange", cfg.RabbitMQ.Exchange))
-		return pub
-	case "kafka":
-		pub, err := kafka.NewPublisher(cfg.Kafka)
-		if err != nil {
-			log.Error("queue: kafka publisher init failed — background jobs disabled", zap.Error(err))
-			return nil
-		}
-		log.Info("queue: publishing via kafka", zap.String("topic", cfg.Kafka.Topic))
-		return pub
-	case "redis", "":
-		log.Info("queue: publishing via redis/asynq")
-		return worker.NewClient(
-			fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
-			cfg.Redis.Password, cfg.Redis.DB,
-		)
-	default:
-		log.Error("queue: unknown QUEUE_DRIVER — background jobs disabled",
+func buildJobQueue(cfg *config.Config, log *zap.Logger) queue.Publisher {
+	def := buildPublisher(cfg.Queue.Driver, cfg, log)
+	if def == nil {
+		log.Error("queue: default driver init failed — background jobs disabled",
 			zap.String("driver", cfg.Queue.Driver))
 		return nil
 	}
+
+	rt := router.New(def)
+
+	if d := cfg.Queue.TransactionalDriver; d != "" && d != cfg.Queue.Driver {
+		if pub := buildPublisher(d, cfg, log); pub != nil {
+			rt.Route(queue.TaskSendEmail, pub)
+			log.Info("queue: routing transactional email", zap.String("driver", d))
+		} else {
+			log.Warn("queue: transactional driver init failed — transactional email falls back to the default driver",
+				zap.String("driver", d))
+		}
+	}
+
+	if d := cfg.Queue.PromotionalDriver; d != "" && d != cfg.Queue.Driver {
+		if pub := buildPublisher(d, cfg, log); pub != nil {
+			rt.Route(queue.TaskSendPromotionalEmail, pub)
+			log.Info("queue: routing promotional email", zap.String("driver", d))
+		} else {
+			log.Warn("queue: promotional driver init failed — promotional email falls back to the default driver",
+				zap.String("driver", d))
+		}
+	}
+
+	return rt
 }
 
 func (a *App) Start() error {
@@ -389,3 +426,25 @@ type userSvcAdapter struct{ svc *userSvc.UserService }
 func (u *userSvcAdapter) GetByID(ctx context.Context, id string) (*userentity.User, error) {
 	return u.svc.GetByID(ctx, id)
 }
+
+// asynqPublisherAdapter adapts *worker.Client — whose Enqueue takes a
+// variadic ...asynq.Option the transport-neutral contract doesn't have — to
+// queue.Publisher, so the Redis backend can participate in pkg/queue/router
+// alongside RabbitMQ/Kafka (which already satisfy queue.Publisher natively).
+type asynqPublisherAdapter struct{ c *worker.Client }
+
+func (a asynqPublisherAdapter) Enqueue(taskType string, payload any) error {
+	return a.c.Enqueue(taskType, payload)
+}
+
+func (a asynqPublisherAdapter) EnqueueEmail(to, subject, html, text string) error {
+	return a.c.EnqueueEmail(to, subject, html, text)
+}
+
+func (a asynqPublisherAdapter) EnqueuePromotionalEmail(to, subject, html, text string) error {
+	return a.c.EnqueuePromotionalEmail(to, subject, html, text)
+}
+
+func (a asynqPublisherAdapter) Close() error { return a.c.Close() }
+
+var _ queue.Publisher = asynqPublisherAdapter{}

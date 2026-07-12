@@ -2,9 +2,10 @@
 
 A React + TypeScript SPA that exercises every HTTP-exposed feature of the Go
 API (`apps/api`) — auth, 2FA, passkeys/WebAuthn, mobile OTP, notifications,
-admin user management, app versioning, and admin analytics — plus a generic
-API console and client-side activity log for anything not covered by a
-dedicated page.
+admin user management, app versioning, admin analytics, and admin
+notifications (test email / send / broadcast — the page for exercising
+transactional-vs-promotional queue routing) — plus a generic API console and
+client-side activity log for anything not covered by a dedicated page.
 
 ## Running
 

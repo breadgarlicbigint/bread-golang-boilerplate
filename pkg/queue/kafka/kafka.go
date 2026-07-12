@@ -82,6 +82,15 @@ func (p *Publisher) EnqueueEmail(to, subject, html, text string) error {
 	})
 }
 
+// EnqueuePromotionalEmail queues a pre-rendered bulk/marketing email
+// (queue.TaskSendPromotionalEmail) — same payload shape as EnqueueEmail,
+// different task type so pkg/queue/router can send it to a different backend.
+func (p *Publisher) EnqueuePromotionalEmail(to, subject, html, text string) error {
+	return p.Enqueue(queue.TaskSendPromotionalEmail, queue.SendEmailPayload{
+		To: to, Subject: subject, Body: html, Text: text,
+	})
+}
+
 // Close flushes and closes the writer.
 func (p *Publisher) Close() error {
 	if p.writer != nil {

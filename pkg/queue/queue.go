@@ -15,6 +15,13 @@
 // All three Publisher implementations satisfy the small EmailQueue interface
 // used by modules/user/service (EnqueueEmail), so any backend can back the
 // welcome-email flow without touching the caller.
+//
+// pkg/queue/router lets the API run more than one Publisher at once and route
+// individual task types to different backends — e.g. TaskSendEmail
+// (transactional) over RabbitMQ for reliable delivery, TaskSendPromotionalEmail
+// (bulk) over Kafka/Redis for throughput — while every worker process still
+// just registers handlers per task type and doesn't need to know routing
+// happened upstream.
 package queue
 
 import "context"
@@ -24,10 +31,11 @@ import "context"
 // across transports.
 
 const (
-	TaskSendEmail        = "email:send"
-	TaskSendNotification = "notification:send"
-	TaskBroadcast        = "notification:broadcast"
-	TaskCleanupSessions  = "session:cleanup"
+	TaskSendEmail            = "email:send"             // transactional — reliability-sensitive, see pkg/queue/router
+	TaskSendPromotionalEmail = "email:send:promotional"  // bulk/marketing — throughput-sensitive, see pkg/queue/router
+	TaskSendNotification     = "notification:send"
+	TaskBroadcast            = "notification:broadcast"
+	TaskCleanupSessions      = "session:cleanup"
 )
 
 // ── Payload types ─────────────────────────────────────────────────────────────
@@ -67,6 +75,11 @@ type Publisher interface {
 	// every backend so callers can depend on a tiny interface instead of the
 	// concrete transport — see modules/user/service EmailQueue.
 	EnqueueEmail(to, subject, html, text string) error
+	// EnqueuePromotionalEmail is the bulk/marketing counterpart of EnqueueEmail
+	// — same payload shape, published under TaskSendPromotionalEmail so
+	// pkg/queue/router can route it to a different, throughput-oriented
+	// backend than transactional email.
+	EnqueuePromotionalEmail(to, subject, html, text string) error
 	// Close releases the underlying connection.
 	Close() error
 }

@@ -18,6 +18,7 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminAppVersionsPage } from "./pages/AdminAppVersionsPage";
 import { AdminAnalyticsPage } from "./pages/AdminAnalyticsPage";
+import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
 import { AppVersionCheckPage } from "./pages/AppVersionCheckPage";
 import { HealthPage } from "./pages/HealthPage";
 import { ApiConsolePage } from "./pages/ApiConsolePage";
@@ -57,6 +58,7 @@ export function App() {
                     <Route path="/admin/users" element={<AdminUsersPage />} />
                     <Route path="/admin/app-versions" element={<AdminAppVersionsPage />} />
                     <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
+                    <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
                   </Route>
                 </Route>
 

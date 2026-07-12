@@ -27,7 +27,8 @@ func (h *EmailTaskHandler) Handle(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("tasks: unmarshal email payload: %w", err)
 	}
 
-	h.log.Info("processing email task", zap.String("to", p.To), zap.String("subject", p.Subject))
+	h.log.Info("processing email task",
+		zap.String("taskType", t.Type()), zap.String("to", p.To), zap.String("subject", p.Subject))
 
 	if h.mailer == nil {
 		h.log.Warn("mailer not configured — skipping email task")
@@ -61,8 +62,11 @@ func (h *SessionCleanupHandler) Handle(ctx context.Context, t *asynq.Task) error
 	return nil
 }
 
-// RegisterAll registers all task handlers on the worker server.
+// RegisterAll registers all task handlers on the worker server. Transactional
+// and promotional email share one handler — routing between backends (see
+// pkg/queue/router) happens on the enqueue side, not here.
 func RegisterAll(srv *worker.Server, emailH *EmailTaskHandler, sessionH *SessionCleanupHandler) {
 	srv.Handle(worker.TaskSendEmail, emailH.Handle)
+	srv.Handle(worker.TaskSendPromotionalEmail, emailH.Handle)
 	srv.Handle(worker.TaskCleanupExpiredSessions, sessionH.Handle)
 }

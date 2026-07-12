@@ -136,6 +136,7 @@ bread-golang-boilerplate/
 │   ├── uuidbson/                 # UUID BSON Binary-4 codec
 │   ├── worker/                   # Asynq (Redis) client + server + task handlers
 │   └── queue/                    # Backend-agnostic Publisher/Consumer contract
+│       ├── router/               # Routes task types to different Publishers (transactional/promotional)
 │       ├── rabbitmq/             # RabbitMQ (AMQP) implementation
 │       ├── kafka/                # Kafka implementation
 │       └── tasks/                # Shared handlers for the RabbitMQ/Kafka workers
@@ -410,7 +411,8 @@ optional integrations — each is disabled gracefully if unconfigured:
 | `APPLE_CLIENT_ID` | Sign in with Apple |
 | `SENTRY_DSN` | Error tracking |
 | `MULTI_TENANT_ENABLED` | Multi-tenant mode (header/subdomain/query resolution) |
-| `QUEUE_DRIVER` (`redis` \| `rabbitmq` \| `kafka`) | Background job backend — must match the worker process you run |
+| `QUEUE_DRIVER` (`redis` \| `rabbitmq` \| `kafka`) | Default background job backend — must match a worker process you run |
+| `QUEUE_TRANSACTIONAL_DRIVER` / `QUEUE_PROMOTIONAL_DRIVER` | Optional per-workload override of `QUEUE_DRIVER` — see "Routing different workloads to different brokers" below |
 
 ---
 
@@ -680,6 +682,38 @@ make deps
 Asynq client/server shape. Task handlers in `pkg/queue/tasks` are shared
 unchanged by both `apps/worker-rabbitmq` and `apps/worker-kafka`.
 
+#### Routing different workloads to different brokers
+
+`QUEUE_DRIVER` is the default backend for everything. Two optional overrides
+route specific task types to a *different* backend at the same time, instead
+of picking one broker for the whole app — e.g. RabbitMQ for
+reliability-sensitive transactional email, Kafka for high-throughput
+promotional/bulk email:
+
+```env
+QUEUE_TRANSACTIONAL_DRIVER=rabbitmq   # welcome/verify/reset/OTP email
+QUEUE_PROMOTIONAL_DRIVER=kafka        # NotificationService.Broadcast's email channel
+```
+
+Both are blank by default (falls back to `QUEUE_DRIVER` — today's
+single-backend behavior, unchanged unless you opt in). `pkg/queue/router`
+implements this: it builds one `queue.Publisher` per distinct driver
+referenced and wires them into a `Router` that itself satisfies
+`queue.Publisher`, so no caller needs to know routing is happening. Every
+worker still registers the same handler for both `email:send` (transactional)
+and `email:send:promotional` (bulk) — routing only decides which broker a job
+lands on, not how it's consumed, so **every broker referenced by either
+override needs its own worker process running**:
+
+```bash
+make docker-queues   # starts Redis + RabbitMQ + Kafka workers all at once —
+                      # needed to actually exercise a split like the example above
+```
+
+(`docker-worker`/`docker-rabbitmq`/`docker-kafka` individually only start
+one broker+worker pair each, which is enough when everything uses the same
+`QUEUE_DRIVER`.)
+
 ---
 
 ### 10. Web Test Client
@@ -687,12 +721,21 @@ unchanged by both `apps/worker-rabbitmq` and `apps/worker-kafka`.
 `web/` is a React + TypeScript SPA (Vite, Tailwind, React Router) that
 exercises every HTTP-exposed endpoint of `apps/api` — auth, 2FA, passkeys
 (real WebAuthn ceremonies via `@simplewebauthn/browser`), mobile OTP,
-notifications, admin users/roles/app-versions/analytics, health — plus a
-generic raw-request API console, an **i18n Compare** page (`/i18n-compare`)
-that fires one request twice with different `x-custom-lang` headers to
-compare translated responses side by side, and a client-side activity log.
-It talks to the API directly over `fetch` (CORS already allows `*`); no
-backend changes are needed to support it.
+notifications, admin users/roles/app-versions/analytics/notifications,
+health — plus a generic raw-request API console, an **i18n Compare** page
+(`/i18n-compare`) that fires one request twice with different
+`x-custom-lang` headers to compare translated responses side by side, and a
+client-side activity log. It talks to the API directly over `fetch` (CORS
+already allows `*`); no backend changes are needed to support it.
+
+**Admin → Notifications** (`/admin/notifications`) is the page for manually
+exercising queue routing (see "Routing different workloads to different
+brokers" above): a **Test email** form for a quick `MAIL_DRIVER` sanity
+check, a **Send to one user** form, and a **Broadcast** form with a
+user-checkbox picker — broadcasting to the `email` channel is what actually
+triggers `QUEUE_PROMOTIONAL_DRIVER`. Create a user from **Admin → Users**
+first (fires the transactional welcome email), then broadcast to `email` and
+compare which worker log picks up each one.
 
 ```bash
 make web-install     # cd web && npm install

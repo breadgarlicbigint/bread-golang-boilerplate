@@ -31,7 +31,8 @@ func (h *EmailTaskHandler) Handle(ctx context.Context, d queue.Delivery) error {
 		return fmt.Errorf("tasks: unmarshal email payload: %w", err)
 	}
 
-	h.log.Info("processing email task", zap.String("to", p.To), zap.String("subject", p.Subject))
+	h.log.Info("processing email task",
+		zap.String("taskType", d.Type), zap.String("to", p.To), zap.String("subject", p.Subject))
 
 	if h.mailer == nil {
 		h.log.Warn("mailer not configured — skipping email task")
@@ -65,8 +66,11 @@ func (h *SessionCleanupHandler) Handle(_ context.Context, _ queue.Delivery) erro
 	return nil
 }
 
-// RegisterAll wires the core handlers onto any queue.Consumer (RabbitMQ or Kafka).
+// RegisterAll wires the core handlers onto any queue.Consumer (RabbitMQ or
+// Kafka). Transactional and promotional email share one handler — routing
+// between backends (see pkg/queue/router) happens on the enqueue side, not here.
 func RegisterAll(c queue.Consumer, emailH *EmailTaskHandler, sessionH *SessionCleanupHandler) {
 	c.Handle(queue.TaskSendEmail, emailH.Handle)
+	c.Handle(queue.TaskSendPromotionalEmail, emailH.Handle)
 	c.Handle(queue.TaskCleanupSessions, sessionH.Handle)
 }
