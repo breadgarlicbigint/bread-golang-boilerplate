@@ -2,6 +2,7 @@
         lint fmt vet tidy mod-sync ensure-modules deps \
         build-worker build-worker-rabbitmq build-worker-kafka \
         run-worker run-worker-rabbitmq run-worker-kafka \
+        dev-worker dev-worker-rabbitmq dev-worker-kafka \
         docker-up docker-down docker-logs docker-rebuild \
         docker-worker docker-rabbitmq docker-kafka \
         migrate-indexes migrate-indexes-local seed seed-local generate-keys swagger generate \
@@ -58,6 +59,33 @@ dev: ensure-modules
 	   go install github.com/air-verse/air@latest; \
 	 fi
 	@PATH="$$(go env GOPATH)/bin:$$PATH" air -c .air.toml
+
+dev-worker: ensure-modules
+	@echo "▶ Starting hot-reload Redis/Asynq worker (air)"
+	@GOPATH=$$(go env GOPATH) ; \
+	 if ! command -v air > /dev/null 2>&1 && [ ! -f "$$GOPATH/bin/air" ]; then \
+	   echo "  Installing air..."; \
+	   go install github.com/air-verse/air@latest; \
+	 fi
+	@PATH="$$(go env GOPATH)/bin:$$PATH" air -c .air.worker.toml
+
+dev-worker-rabbitmq: ensure-modules
+	@echo "▶ Starting hot-reload RabbitMQ worker (air)"
+	@GOPATH=$$(go env GOPATH) ; \
+	 if ! command -v air > /dev/null 2>&1 && [ ! -f "$$GOPATH/bin/air" ]; then \
+	   echo "  Installing air..."; \
+	   go install github.com/air-verse/air@latest; \
+	 fi
+	@PATH="$$(go env GOPATH)/bin:$$PATH" air -c .air.worker-rabbitmq.toml
+
+dev-worker-kafka: ensure-modules
+	@echo "▶ Starting hot-reload Kafka worker (air)"
+	@GOPATH=$$(go env GOPATH) ; \
+	 if ! command -v air > /dev/null 2>&1 && [ ! -f "$$GOPATH/bin/air" ]; then \
+	   echo "  Installing air..."; \
+	   go install github.com/air-verse/air@latest; \
+	 fi
+	@PATH="$$(go env GOPATH)/bin:$$PATH" air -c .air.worker-kafka.toml
 
 # ensure-modules: self-heals go.sum if it's missing or stale.
 # Runs automatically before 'dev', 'build', and 'run' so a fresh clone
@@ -317,8 +345,11 @@ help:
 	@echo "    make mod-sync        Run go mod tidy (generates/updates go.sum)"
 	@echo ""
 	@echo "  Development"
-	@echo "    make dev             Hot reload with air"
+	@echo "    make dev             Hot reload API server with air"
 	@echo "    make run             Build and run API server"
+	@echo "    make dev-worker          Hot reload Redis/Asynq worker with air"
+	@echo "    make dev-worker-rabbitmq Hot reload RabbitMQ worker with air"
+	@echo "    make dev-worker-kafka    Hot reload Kafka worker with air"
 	@echo "    make run-worker          Build and run Redis/Asynq worker"
 	@echo "    make run-worker-rabbitmq Build and run RabbitMQ worker"
 	@echo "    make run-worker-kafka    Build and run Kafka worker"

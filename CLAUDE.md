@@ -36,6 +36,9 @@ make deps               # go get the RabbitMQ + Kafka client libs and sync go.su
 make run-worker          # build + run the Redis/Asynq worker (apps/worker)
 make run-worker-rabbitmq # build + run the RabbitMQ worker (apps/worker-rabbitmq)
 make run-worker-kafka    # build + run the Kafka worker (apps/worker-kafka)
+make dev-worker          # hot-reload the Redis/Asynq worker with air
+make dev-worker-rabbitmq # hot-reload the RabbitMQ worker with air
+make dev-worker-kafka    # hot-reload the Kafka worker with air
 make docker-worker       # docker-up + Redis/Asynq worker (profile: worker)
 make docker-rabbitmq     # docker-up + RabbitMQ broker + worker (profile: rabbitmq)
 make docker-kafka        # docker-up + Kafka broker + worker (profile: kafka)
@@ -536,7 +539,8 @@ jobQueue.EnqueueEmail(to,subject,html,text)  ──►  Redis (asynq "default" q
   it for any new request-triggered transactional email.
 - **The worker process must be running for these emails to actually be sent.**
   `make dev` (API only) just enqueues to Redis — jobs sit in the queue until a
-  worker consumes them. Run `make docker-worker` (or `make run-worker`) too.
+  worker consumes them. Run `make docker-worker` (or `make run-worker` /
+  `make dev-worker` for hot reload) too.
 - **Diagnostic exception:** `POST /v1/admin/notifications/test-email` sends
   synchronously via `NotificationService.SendTestEmail` and returns the raw
   transport error (`{"sent":false,"error":"..."}`), specifically so mail-driver
@@ -591,18 +595,37 @@ up and never run — no error, no crash, just silence.
 
 ```bash
 # Redis (Asynq) — default
-make docker-worker       # or: make run-worker
+make docker-worker       # or: make run-worker      # or: make dev-worker (hot reload)
 
 # RabbitMQ — management UI at http://localhost:15672 (guest/guest)
-make docker-rabbitmq     # or: make run-worker-rabbitmq
+make docker-rabbitmq     # or: make run-worker-rabbitmq  # or: make dev-worker-rabbitmq
 
 # Kafka — broker at localhost:9094 (host) / kafka:9092 (in-network)
-make docker-kafka        # or: make run-worker-kafka
+make docker-kafka        # or: make run-worker-kafka     # or: make dev-worker-kafka
 ```
 
 `make deps` runs `go get` for the RabbitMQ (`rabbitmq/amqp091-go`) and Kafka
 (`segmentio/kafka-go`) client libraries and syncs `go.sum` — both are
 pure-Go clients (no CGO/librdkafka), so `CGO_ENABLED=0` builds still work.
+
+### Hot reload for workers (local dev)
+
+Like `make dev` for the API, each worker has an air-backed hot-reload target
+that rebuilds and restarts on `.go` file changes — run whichever one matches
+`QUEUE_DRIVER` in `.env`, against a locally reachable Redis/RabbitMQ/Kafka +
+MongoDB (e.g. via `make docker-up`, which starts Mongo + Redis but not the
+worker container itself):
+
+```bash
+make dev-worker            # Redis/Asynq worker, air config: .air.worker.toml
+make dev-worker-rabbitmq   # RabbitMQ worker,    air config: .air.worker-rabbitmq.toml
+make dev-worker-kafka      # Kafka worker,       air config: .air.worker-kafka.toml
+```
+
+Each target's tmp/build dir (`.air-worker/`, `.air-worker-rabbitmq/`,
+`.air-worker-kafka/`) is separate from `.air/` (used by `make dev`) and from
+each other, so `make dev`, `make dev-worker`, and one of the queue-specific
+worker targets can all run at once without clobbering each other's binaries.
 
 Services depend only on the small `EmailQueue` interface
 (`EnqueueEmail(to, subject, html, text) error`) — never on `asynq`, `amqp091-go`,
@@ -1036,7 +1059,7 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | Setting `SMTP_*` vars but email still not sending | `MAIL_DRIVER` must be set to `smtp` — it stays on `ses` (the default) otherwise, and SMTP config is ignored |
 | Constructing a `*email.Mailer` directly with `email.NewMailer(cfg.AWS)` | `NewMailer` now takes an `email.Sender`, not `AWSConfig` — use `email.NewMailerFromConfig(cfg, log)` |
 | Gmail SMTP fails to connect / auth with `SMTP_HOST=smtp.google.com` | `smtp.google.com` is the Workspace relay; personal `@gmail.com` accounts must use `SMTP_HOST=smtp.gmail.com` (587 STARTTLS or 465 SSL) with a 16-char **App Password** (2FA required), not the account password |
-| Welcome email (or other transactional email) never arrives even though config is correct | Request-triggered emails are enqueued to the asynq queue and delivered by the **worker** — run `make docker-worker`/`make run-worker`; `make dev` alone only enqueues. See "Async delivery via the worker queue" |
+| Welcome email (or other transactional email) never arrives even though config is correct | Request-triggered emails are enqueued to the asynq queue and delivered by the **worker** — run `make docker-worker`/`make run-worker`/`make dev-worker`; `make dev` alone only enqueues. See "Async delivery via the worker queue" |
 | Enqueuing email from a service by importing `asynq` / task-type strings | Depend on the `EmailQueue` interface (`EnqueueEmail(to,subject,html,text)`) — `worker.Client` implements it; render via `LocalizedMailer` then enqueue |
 | Adding a request-triggered email as a synchronous `localMailer.Send*` call | Only diagnostics (e.g. `test-email`) send synchronously — enqueue everything else via `jobQueue.EnqueueEmail` so a slow/failed SMTP send doesn't block or fail the HTTP request |
 | Jobs enqueued but never processed, no error anywhere | `QUEUE_DRIVER` doesn't match the worker process actually running — e.g. `QUEUE_DRIVER=rabbitmq` in `.env` but `make docker-worker` (Redis) is what's running. Start the worker whose profile matches `QUEUE_DRIVER` (`docker-worker`/`docker-rabbitmq`/`docker-kafka`) |

@@ -4,6 +4,9 @@ build/
 *.out
 *.test
 .air/
+.air-worker/
+.air-worker-rabbitmq/
+.air-worker-kafka/
 
 # Keys — NEVER commit private keys
 keys/

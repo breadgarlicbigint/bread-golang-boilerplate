@@ -1,0 +1,33 @@
+# .air.worker-kafka.toml — hot reload config for the Kafka worker
+# (apps/worker-kafka). https://github.com/air-verse/air
+
+root = "."
+tmp_dir = ".air-worker-kafka"
+
+[build]
+  cmd = "go build -o .air-worker-kafka/worker-kafka ./apps/worker-kafka"
+  bin = ".air-worker-kafka/worker-kafka"
+  full_bin = ".air-worker-kafka/worker-kafka"
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  exclude_dir  = ["assets", "tmp", ".air", ".air-worker", ".air-worker-rabbitmq", ".air-worker-kafka", "vendor", "testdata", "docs", "web"]
+  exclude_file = []
+  exclude_regex = ["_test.go"]
+  exclude_unchanged = true
+  follow_symlink = false
+  log = ".air-worker-kafka/build.log"
+  delay = 1000          # ms
+  stop_on_error = true
+  send_interrupt = false
+  kill_delay = "0s"
+
+[color]
+  main    = "magenta"
+  watcher = "cyan"
+  build   = "yellow"
+  runner  = "green"
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true
