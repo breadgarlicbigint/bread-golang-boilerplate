@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +28,7 @@ func TenantFromHeader(resolver TenantResolver) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		slug := c.GetHeader("X-Tenant-ID")
 		if slug == "" {
-			response.BadRequest(c, "X-Tenant-ID header is required")
+			response.ErrorI18n(c, http.StatusBadRequest, "tenant.headerRequired")
 			return
 		}
 		resolveTenant(c, resolver, slug)
@@ -51,7 +52,7 @@ func TenantFromSubdomain(resolver TenantResolver, baseDomain string) gin.Handler
 		}
 		slug := strings.TrimSuffix(host, "."+baseDomain)
 		if slug == "" || slug == host {
-			response.BadRequest(c, "Tenant cannot be determined from the request host")
+			response.ErrorI18n(c, http.StatusBadRequest, "tenant.hostUnresolved")
 			return
 		}
 		resolveTenant(c, resolver, slug)
@@ -63,7 +64,7 @@ func TenantFromQuery(resolver TenantResolver) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		slug := c.Query("tenant")
 		if slug == "" {
-			response.BadRequest(c, "?tenant query param is required")
+			response.ErrorI18n(c, http.StatusBadRequest, "tenant.queryParamRequired")
 			return
 		}
 		resolveTenant(c, resolver, slug)
@@ -87,11 +88,11 @@ func TenantOptional(resolver TenantResolver) gin.HandlerFunc {
 func resolveTenant(c *gin.Context, r TenantResolver, slug string) {
 	t, err := r.FindBySlug(c.Request.Context(), slug)
 	if err != nil {
-		response.NotFound(c, "Tenant not found")
+		response.NotFoundI18n(c, "tenant.notFound")
 		return
 	}
 	if t.Status == entity.TenantStatusSuspended {
-		response.Forbidden(c, "Tenant account is suspended")
+		response.ForbiddenI18n(c, "tenant.suspended")
 		return
 	}
 	setTenantContext(c, t)

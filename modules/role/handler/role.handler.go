@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/dto"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/entity"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
 )
 
@@ -41,7 +40,7 @@ func (h *RoleHandler) RegisterRoutes(rg *gin.RouterGroup, extraMw ...gin.Handler
 func (h *RoleHandler) List(c *gin.Context) {
 	roles, err := h.svc.List(c.Request.Context())
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
 
@@ -49,14 +48,5 @@ func (h *RoleHandler) List(c *gin.Context) {
 	for _, r := range roles {
 		result = append(result, dto.FromEntity(r))
 	}
-	response.OK(c, "Roles fetched", result)
-}
-
-func handleError(c *gin.Context, err error) {
-	if ae, ok := errors.As(err); ok {
-		response.Error(c, ae.Status, ae.Message)
-		return
-	}
-	response.LogInternal(err, "unexpected error")
-	response.InternalServerError(c, "An unexpected error occurred")
+	response.OKI18n(c, "role.listSuccess", result)
 }

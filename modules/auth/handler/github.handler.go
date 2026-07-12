@@ -69,23 +69,24 @@ func (h *GitHubHandler) Callback(c *gin.Context) {
 	state := c.Query("state")
 	code := c.Query("code")
 	if state == "" || code == "" {
-		response.BadRequest(c, "Missing state or code parameter")
+		response.ErrorI18n(c, http.StatusBadRequest, "auth.oauthMissingParams")
 		return
 	}
 
 	// Validate CSRF state
 	if err := h.rdb.Del(c.Request.Context(), githubStatePrefix+state).Err(); err != nil {
-		response.Unauthorized(c, "Invalid OAuth state — possible CSRF attack")
+		response.ErrorI18n(c, http.StatusUnauthorized, "auth.oauthInvalidState")
 		return
 	}
 
 	ghUser, err := h.gh.Exchange(c.Request.Context(), code)
 	if err != nil {
-		response.Unauthorized(c, "GitHub authentication failed: "+err.Error())
+		response.LogInternal(err, "github oauth: exchange failed")
+		response.ErrorI18n(c, http.StatusUnauthorized, "auth.githubAuthFailed")
 		return
 	}
 	if ghUser.Email == "" {
-		response.BadRequest(c, "GitHub account has no verified public email. Please add one at github.com/settings/emails")
+		response.ErrorI18n(c, http.StatusBadRequest, "auth.githubNoVerifiedEmail")
 		return
 	}
 
@@ -119,7 +120,7 @@ func (h *GitHubHandler) Callback(c *gin.Context) {
 		}
 		if err := h.repo.Create(ctx, user); err != nil {
 			response.LogInternal(err, "github oauth: create account failed")
-			response.InternalServerError(c, "Failed to create account")
+			response.ErrorI18n(c, http.StatusInternalServerError, "auth.accountCreateFailed")
 			return
 		}
 	} else if user.GoogleID == "" {
@@ -129,10 +130,10 @@ func (h *GitHubHandler) Callback(c *gin.Context) {
 	loginResp, err := h.authSvc.LoginWithGitHub(ctx, user, c.ClientIP())
 	if err != nil {
 		response.LogInternal(err, "github oauth: issue tokens failed")
-		response.InternalServerError(c, "Failed to issue tokens")
+		response.ErrorI18n(c, http.StatusInternalServerError, "auth.tokenIssueFailed")
 		return
 	}
-	response.OK(c, "GitHub login successful", loginResp)
+	response.OKI18n(c, "auth.githubLoginSuccess", loginResp)
 }
 
 func sanitiseGitHubUsername(login string) string {
@@ -181,7 +182,8 @@ func (h *AppleHandler) Callback(c *gin.Context) {
 
 	appleUser, err := h.apple.ValidateIDToken(c.Request.Context(), req.IdentityToken)
 	if err != nil {
-		response.Unauthorized(c, "Apple authentication failed: "+err.Error())
+		response.LogInternal(err, "apple oauth: validate id token failed")
+		response.ErrorI18n(c, http.StatusUnauthorized, "auth.appleAuthFailed")
 		return
 	}
 
@@ -204,7 +206,7 @@ func (h *AppleHandler) Callback(c *gin.Context) {
 		}
 		if err := h.repo.Create(ctx, user); err != nil {
 			response.LogInternal(err, "apple oauth: create account failed")
-			response.InternalServerError(c, "Failed to create account")
+			response.ErrorI18n(c, http.StatusInternalServerError, "auth.accountCreateFailed")
 			return
 		}
 	} else if user.AppleID == "" {
@@ -214,10 +216,10 @@ func (h *AppleHandler) Callback(c *gin.Context) {
 	loginResp, err := h.authSvc.IssueTokenPairPublic(ctx, user, c.ClientIP())
 	if err != nil {
 		response.LogInternal(err, "apple oauth: issue tokens failed")
-		response.InternalServerError(c, "Failed to issue tokens")
+		response.ErrorI18n(c, http.StatusInternalServerError, "auth.tokenIssueFailed")
 		return
 	}
-	response.OK(c, "Apple login successful", loginResp)
+	response.OKI18n(c, "auth.appleLoginSuccess", loginResp)
 }
 
 // Unused but referenced in dto

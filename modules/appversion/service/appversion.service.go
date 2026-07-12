@@ -57,7 +57,7 @@ type VersionCheckResponse struct {
 	ForceUpdate    bool         `json:"forceUpdate"`
 }
 
-var ErrVersionNotFound = errors.New(404, "VERSION_NOT_FOUND", "No version policy found for this platform")
+var ErrVersionNotFound = errors.NewI18n(404, "VERSION_NOT_FOUND", "appVersion.notFound", "No version policy found for this platform")
 
 type AppVersionService struct {
 	col *mongo.Collection

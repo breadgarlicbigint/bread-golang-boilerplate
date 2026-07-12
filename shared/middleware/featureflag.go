@@ -16,7 +16,7 @@ func FeatureFlagProtected(checker FlagChecker, flagKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		enabled, err := checker.IsEnabled(c.Request.Context(), flagKey)
 		if err != nil || !enabled {
-			response.Error(c, 403, "This feature is not available")
+			response.ForbiddenI18n(c, "featureFlag.disabled")
 			return
 		}
 		c.Next()

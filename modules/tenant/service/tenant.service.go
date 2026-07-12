@@ -14,9 +14,9 @@ import (
 )
 
 var (
-	ErrTenantNotFound   = errors.New(404, "TENANT_NOT_FOUND", "Tenant not found")
-	ErrTenantSuspended  = errors.New(403, "TENANT_SUSPENDED", "Tenant account is suspended")
-	ErrSlugTaken        = errors.New(409, "SLUG_TAKEN", "Tenant slug is already taken")
+	ErrTenantNotFound  = errors.NewI18n(404, "TENANT_NOT_FOUND", "tenant.notFound", "Tenant not found")
+	ErrTenantSuspended = errors.NewI18n(403, "TENANT_SUSPENDED", "tenant.suspended", "Tenant account is suspended")
+	ErrSlugTaken       = errors.NewI18n(409, "SLUG_TAKEN", "tenant.slugTaken", "Tenant slug is already taken")
 )
 
 type TenantService struct {

@@ -54,6 +54,8 @@ export interface RequestOptions {
   rawBody?: boolean;
   /** The endpoint doesn't use the standard Envelope wrapper (e.g. /health*) — return the raw parsed JSON as `data`. */
   rawResponse?: boolean;
+  /** Override x-custom-lang for this request only, ignoring the Settings page value. */
+  lang?: string;
 }
 
 export interface ApiResult<T> {
@@ -113,6 +115,7 @@ export async function request<T = unknown>(path: string, opts: RequestOptions = 
     skipRefresh = false,
     rawBody = false,
     rawResponse = false,
+    lang,
   } = opts;
   const settings = getSettings();
   const finalHeaders: Record<string, string> = { ...headers };
@@ -130,7 +133,8 @@ export async function request<T = unknown>(path: string, opts: RequestOptions = 
     const token = getAccessToken();
     if (token) finalHeaders["Authorization"] = `Bearer ${token}`;
   }
-  if (settings.lang) finalHeaders["x-custom-lang"] = settings.lang;
+  const effectiveLang = lang ?? settings.lang;
+  if (effectiveLang) finalHeaders["x-custom-lang"] = effectiveLang;
   if (settings.tenantId) finalHeaders["X-Tenant-ID"] = settings.tenantId;
   if (settings.appVersion) finalHeaders["X-App-Version"] = settings.appVersion;
   if (settings.appPlatform) finalHeaders["X-App-Platform"] = settings.appPlatform;

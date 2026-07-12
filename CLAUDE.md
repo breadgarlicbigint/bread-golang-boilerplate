@@ -209,17 +209,27 @@ field details using JSON tag names (not Go struct names) and human-readable mess
 ### Error handling in handlers
 
 ```go
-func handleError(c *gin.Context, err error) {
-    if ae, ok := errors.As(err); ok {
-        response.Error(c, ae.Status, ae.Message)
-        return
-    }
-    response.InternalServerError(c, "An unexpected error occurred")
+result, err := h.svc.Create(c.Request.Context(), req)
+if err != nil {
+    response.HandleAppError(c, err)
+    return
 }
 ```
 
+`response.HandleAppError` (`shared/response/response_i18n.go`) is the single
+translation point from a service-layer error to an HTTP response: it unwraps
+`*errors.AppError`, translates via `ae.Key` (falling back to the raw
+`ae.Message` if `Key` is empty), and — for anything that isn't an `AppError`
+— logs the real error server-side and returns a generic translated 500. Call
+it directly; don't write a per-handler `handleError` wrapper (older handlers
+had one — they've since been consolidated onto this shared helper).
+
 Never expose raw error strings to the client. All domain errors go through
-`shared/errors.AppError` which carries a status code and safe message.
+`shared/errors.AppError` which carries a status code and safe message. Build
+sentinels with `errors.NewI18n(status, code, key, message)` — `key` is the
+`locales/*.json` key translated for the response; use `errors.New(status,
+code, message)` (no key) only for messages that genuinely have no
+translation and shouldn't get one.
 
 ### Response envelope
 
@@ -237,8 +247,19 @@ All endpoints return the standard envelope:
 }
 ```
 
-Use `response.OK`, `response.Created`, `response.OKWithMeta`, `response.Error`, etc.
-For i18n-aware responses use `response.OKI18n`, `response.ErrorI18n`.
+**Every handler response goes through the i18n-aware helpers** —
+`response.OKI18n`, `response.CreatedI18n`, `response.OKWithMetaI18n`,
+`response.ErrorI18n`, `response.UnauthorizedI18n`, `response.ForbiddenI18n`,
+`response.NotFoundI18n` — each takes a `locales/*.json` key instead of a
+literal string, e.g. `response.OKI18n(c, "user.createSuccess", data)` instead
+of `response.OK(c, "User created", data)`. The non-`I18n` variants
+(`response.OK`, `response.Error`, ...) still exist and are what the `I18n`
+helpers call internally, but a handler should never hardcode a client-facing
+message string directly — add a locale key instead (see "Multi-language"
+below). The one deliberate exception is
+`POST /v1/admin/notifications/test-email`, which echoes a raw transport
+`err.Error()` into the response **data** (not the translated `message`) by
+design — see "Async delivery via the worker queue".
 
 ### UUID Primary Keys
 
@@ -418,12 +439,15 @@ func (h *XxxHandler) Create(c *gin.Context) {
     }
     result, err := h.svc.Create(c.Request.Context(), req)
     if err != nil {
-        handleError(c, err)
+        response.HandleAppError(c, err)
         return
     }
-    response.Created(c, "Xxx created", mapToResponse(result))
+    response.CreatedI18n(c, "xxx.createSuccess", mapToResponse(result))
 }
 ```
+
+Add `"createSuccess": "Xxx created"` under a new `xxx` namespace in both
+`locales/en.json` and `locales/id.json` (see "Multi-language" below).
 
 ---
 
@@ -602,12 +626,15 @@ Key structure:
 http.*          ← HTTP status messages
 auth.*          ← Authentication messages
 user.*          ← User CRUD messages
+role.*          ← Role messages
 passkey.*       ← WebAuthn messages
 mobile.*        ← OTP / mobile verification
 appVersion.*    ← App version check messages
 notification.*  ← Notification messages
+analytics.*     ← Analytics endpoint messages
 apiKey.*        ← API key messages
 tenant.*        ← Multi-tenant messages
+featureFlag.*   ← Feature flag messages
 validation.*    ← Validator tag messages (with {Field}, {Param} interpolation)
 email.*         ← All email template text tokens
   email.layout.*
@@ -619,9 +646,23 @@ email.*         ← All email template text tokens
 ```
 
 **Rules:**
-- Add keys to BOTH `en.json` and `id.json`
+- Prefer adding keys to BOTH `en.json` and `id.json`. `apiKey.*`, `passkey.*`,
+  `tenant.*`, `role.*`, `featureFlag.*`, and `validation.*` are the current
+  exception — they're English-only today and intentionally rely on the
+  fallback below; don't feel obligated to add Indonesian translations there
+  unless you're doing a real localization pass. `auth.*`, `user.*`,
+  `mobile.*`, `appVersion.*`, `notification.*`, `analytics.*`, `http.*`, and
+  `health.*` are fully bilingual — keep new keys in those namespaces
+  bilingual too.
 - Use `{name}`, `{field}` etc. for variable interpolation (NOT Go template syntax)
 - Missing keys in non-default languages fall back to `en` automatically
+- Every handler response should go through `response.*I18n` with a locale
+  key — see "Error handling in handlers" and "Response envelope" above.
+  Don't hardcode a client-facing message string in a handler.
+- To manually compare how a response looks in two languages, use the web
+  test client's **i18n Compare** page (`web/src/pages/I18nComparePage.tsx`,
+  route `/i18n-compare`) — it fires the same request twice with different
+  `x-custom-lang` headers and shows both responses side by side.
 
 ---
 
@@ -747,9 +788,12 @@ Run `make swagger` after adding/changing any annotations.
 exercises every HTTP-exposed endpoint of `apps/api` — auth, 2FA, passkeys
 (real WebAuthn ceremonies via `@simplewebauthn/browser`), mobile OTP,
 notifications, admin users/app-versions/analytics, health — plus a generic
-raw-request API console and a client-side activity log for anything not
-covered by a dedicated page. It talks to the API directly over `fetch`
-(CORS already allows `*`); no backend code changes were needed to support it.
+raw-request API console, an **i18n Compare** page (`/i18n-compare`) that
+fires one request twice with different `x-custom-lang` headers to compare
+translated responses side by side, and a client-side activity log for
+anything not covered by a dedicated page. It talks to the API directly over
+`fetch` (CORS already allows `*`); no backend code changes were needed to
+support it.
 
 ```bash
 make web-install     # cd web && npm install
@@ -964,7 +1008,9 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | Pitfall | Correct approach |
 |---|---|
 | Using `c.ShouldBindJSON` directly in a handler | Use `validate.BindJSON(c, &req)` |
-| Returning raw Go error strings to the client | Wrap in `errors.AppError` or use `handleError(c, err)` |
+| Returning raw Go error strings to the client | Wrap in `errors.AppError` and call `response.HandleAppError(c, err)` |
+| Hardcoding a client-facing message in `response.OK`/`Created`/`Error`/etc. | Use the `*I18n` variant with a `locales/*.json` key (`response.OKI18n`, `response.ErrorI18n`, ...) — see "Response envelope" |
+| Building a new `errors.AppError` sentinel with `errors.New(...)` | Use `errors.NewI18n(status, code, key, message)` so the client-facing text is translated via `x-custom-lang`, not just the internal `Message` |
 | Hardcoding English text in handlers | Use `pkgi18n.TC(c, "key")` |
 | Hardcoding text in email templates | Every visible string must be a `__TOKEN__` |
 | `@BasePath /v1` in swagger annotations | Use `@BasePath /` — routes already include `/v1` |
@@ -1007,7 +1053,8 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `shared/config/config.go` | Add new env vars (struct + Load() + SetDefault + viper default) |
 | `shared/validate/validate.go` | Single validation entry point for all handlers |
 | `shared/response/response.go` | Standard response envelope helpers |
-| `shared/errors/errors.go` | Domain error sentinels (add new ones here) |
+| `shared/response/response_i18n.go` | `*I18n` response helpers + `HandleAppError` — the single error→response translation point |
+| `shared/errors/errors.go` | Domain error sentinels (add new ones here, via `errors.NewI18n`) |
 | `modules/role/repository/role.repository.go` | Role lookup — `FindByID` used during JWT issuance, `FindAll` for the roles dropdown |
 | `modules/role/handler/role.handler.go` | `GET /v1/roles` (admin) — lists roles to populate the create-user role dropdown in `web/` |
 | `pkg/worker/worker.go` | Asynq (Redis) client/server + task types; `Client.EnqueueEmail` is the transactional-email entry point |
@@ -1031,3 +1078,4 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `web/README.md` | Web test client — running it, WebAuthn origin setup, OAuth caveats |
 | `web/src/lib/apiClient.ts` | Test client's fetch wrapper — auth headers, refresh-on-401, request logging |
 | `web/src/api/*.ts` | Typed wrappers per module, mirroring each `dto` package 1:1 |
+| `web/src/pages/I18nComparePage.tsx` | `/i18n-compare` — fires one request twice with different `x-custom-lang` headers to compare translated responses side by side |

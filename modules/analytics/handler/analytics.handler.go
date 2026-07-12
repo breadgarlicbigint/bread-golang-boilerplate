@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -157,7 +158,7 @@ func (h *AnalyticsHandler) FraudSignals(c *gin.Context) {
 func bindDateRange(c *gin.Context) (analyticsDTO.DateRangeQuery, time.Time, time.Time, bool) {
 	var q analyticsDTO.DateRangeQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
-		response.BadRequest(c, "startDate and endDate are required (YYYY-MM-DD)")
+		response.ErrorI18n(c, http.StatusBadRequest, "analytics.dateRangeRequired")
 		return q, time.Time{}, time.Time{}, false
 	}
 	if q.Granularity == "" {
@@ -165,7 +166,7 @@ func bindDateRange(c *gin.Context) (analyticsDTO.DateRangeQuery, time.Time, time
 	}
 	start, end, err := q.Dates()
 	if err != nil {
-		response.BadRequest(c, "Invalid date format — use YYYY-MM-DD")
+		response.ErrorI18n(c, http.StatusBadRequest, "analytics.invalidDateFormat")
 		return q, time.Time{}, time.Time{}, false
 	}
 	return q, start, end, true
@@ -182,7 +183,7 @@ func (h *AnalyticsHandler) cachedTTL(c *gin.Context, key string, ttl time.Durati
 		var cached interface{}
 		if json.Unmarshal(raw, &cached) == nil {
 			c.Header("X-Cache", "HIT")
-			response.OK(c, "Data fetched", cached)
+			response.OKI18n(c, "analytics.fetchSuccess", cached)
 			return
 		}
 	}
@@ -190,7 +191,7 @@ func (h *AnalyticsHandler) cachedTTL(c *gin.Context, key string, ttl time.Durati
 	data, err := fn()
 	if err != nil {
 		response.LogInternal(err, "analytics query failed")
-		response.InternalServerError(c, "Analytics query failed")
+		response.ErrorI18n(c, http.StatusInternalServerError, "analytics.queryFailed")
 		return
 	}
 
@@ -198,5 +199,5 @@ func (h *AnalyticsHandler) cachedTTL(c *gin.Context, key string, ttl time.Durati
 		_ = h.rdb.Set(ctx, key, b, ttl)
 	}
 	c.Header("X-Cache", "MISS")
-	response.OK(c, "Data fetched", data)
+	response.OKI18n(c, "analytics.fetchSuccess", data)
 }

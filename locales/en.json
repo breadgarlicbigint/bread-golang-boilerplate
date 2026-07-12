@@ -34,7 +34,18 @@
     "passkeyLoginSuccess": "Passkey authentication successful",
     "passwordResetEmailSent": "Password reset email sent",
     "passwordResetSuccess": "Password reset successful",
-    "emailVerified": "Email address verified"
+    "emailVerified": "Email address verified",
+    "oauthMissingParams": "Missing state or code parameter",
+    "oauthInvalidState": "Invalid OAuth state — possible CSRF attack",
+    "githubAuthFailed": "GitHub authentication failed",
+    "githubNoVerifiedEmail": "GitHub account has no verified public email. Please add one at github.com/settings/emails",
+    "appleAuthFailed": "Apple authentication failed",
+    "accountCreateFailed": "Failed to create account",
+    "tokenIssueFailed": "Failed to issue tokens",
+    "missingAuthHeader": "Missing or malformed Authorization header",
+    "invalidAccessToken": "Invalid or expired access token",
+    "insufficientRole": "Insufficient role",
+    "ownResourceOnly": "You can only access your own resources"
   },
   "user": {
     "fetchSuccess": "User fetched",
@@ -49,7 +60,9 @@
     "profileUpdated": "Profile updated",
     "notFound": "User not found",
     "emailTaken": "Email is already registered",
-    "usernameTaken": "Username is already taken"
+    "usernameTaken": "Username is already taken",
+    "invalidPassword": "Password does not meet requirements",
+    "passwordSameAsOld": "New password must be different from the current password"
   },
   "passkey": {
     "registrationBegin": "Registration challenge ready",
@@ -60,7 +73,8 @@
     "noPasskeys": "No passkeys registered for this account",
     "ceremonyExpired": "Challenge has expired. Please start again.",
     "invalidAttestation": "Passkey registration failed. Invalid attestation.",
-    "authFailed": "Passkey authentication failed"
+    "authFailed": "Passkey authentication failed",
+    "invalidID": "Invalid passkey ID"
   },
   "mobile": {
     "otpSent": "Verification code sent",
@@ -78,7 +92,10 @@
     "updateAvailable": "A new version is available",
     "updateRequired": "A required update is available. Please update to continue.",
     "listSuccess": "Version policies fetched",
-    "upsertSuccess": "Version policy updated"
+    "upsertSuccess": "Version policy updated",
+    "notFound": "No version policy found for this platform",
+    "missingParams": "platform and version are required (header or query param)",
+    "invalidPlatform": "Invalid platform. Use: ios | android | web"
   },
   "notification": {
     "sendSuccess": "Notification sent",
@@ -88,14 +105,28 @@
     "prefsUpdated": "Notification preferences updated",
     "prefsFetched": "Notification preferences fetched",
     "deviceRegistered": "Device token registered",
-    "deviceRemoved": "Device token removed"
+    "deviceRemoved": "Device token removed",
+    "unreadCountFetched": "Unread count fetched",
+    "invalidID": "Invalid notification ID",
+    "broadcastComplete": "Broadcast complete",
+    "testEmailFailed": "Test email failed",
+    "testEmailSent": "Test email sent"
   },
   "apiKey": {
     "createSuccess": "API key created",
     "listSuccess": "API keys fetched",
     "revokeSuccess": "API key revoked",
     "invalid": "Invalid or inactive API key",
-    "expired": "API key has expired"
+    "expired": "API key has expired",
+    "notFound": "API key not found",
+    "missing": "API key missing"
+  },
+  "role": {
+    "listSuccess": "Roles fetched",
+    "notFound": "Role not found"
+  },
+  "featureFlag": {
+    "disabled": "This feature is not enabled"
   },
   "tenant": {
     "createSuccess": "Tenant created",
@@ -104,10 +135,16 @@
     "suspended": "Tenant account is suspended",
     "slugTaken": "Tenant slug is already taken",
     "memberAdded": "Member added to tenant",
-    "memberRemoved": "Member removed from tenant"
+    "memberRemoved": "Member removed from tenant",
+    "headerRequired": "X-Tenant-ID header is required",
+    "hostUnresolved": "Tenant cannot be determined from the request host",
+    "queryParamRequired": "?tenant query param is required"
   },
   "analytics": {
-    "fetchSuccess": "Data fetched"
+    "fetchSuccess": "Data fetched",
+    "dateRangeRequired": "startDate and endDate are required (YYYY-MM-DD)",
+    "invalidDateFormat": "Invalid date format — use YYYY-MM-DD",
+    "queryFailed": "Analytics query failed"
   },
   "health": {
     "healthy": "Service is healthy",

@@ -30,9 +30,9 @@ const (
 )
 
 var (
-	ErrMobileAlreadyVerified = errors.New(409, "MOBILE_ALREADY_VERIFIED", "This phone number is already verified")
-	ErrOTPExpiredOrInvalid   = errors.New(400, "OTP_INVALID", "OTP is invalid or has expired")
-	ErrOTPMaxAttempts        = errors.New(429, "OTP_MAX_ATTEMPTS", "Too many incorrect attempts. Please request a new code.")
+	ErrMobileAlreadyVerified = errors.NewI18n(409, "MOBILE_ALREADY_VERIFIED", "mobile.alreadyVerified", "This phone number is already verified")
+	ErrOTPExpiredOrInvalid   = errors.NewI18n(400, "OTP_INVALID", "mobile.invalidOTP", "OTP is invalid or has expired")
+	ErrOTPMaxAttempts        = errors.NewI18n(429, "OTP_MAX_ATTEMPTS", "mobile.maxAttempts", "Too many incorrect attempts. Please request a new code.")
 )
 
 type MobileService struct {

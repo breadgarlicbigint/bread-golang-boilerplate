@@ -26,21 +26,21 @@ func AuthJWTAccess(jwtMgr *jwtpkg.Manager, sessions SessionStore) gin.HandlerFun
 	return func(c *gin.Context) {
 		raw := c.GetHeader("Authorization")
 		if !strings.HasPrefix(raw, "Bearer ") {
-			response.Unauthorized(c, "Missing or malformed Authorization header")
+			response.UnauthorizedI18n(c, "auth.missingAuthHeader")
 			return
 		}
 		tokenStr := strings.TrimPrefix(raw, "Bearer ")
 
 		claims, err := jwtMgr.ParseAccess(tokenStr)
 		if err != nil {
-			response.Unauthorized(c, "Invalid or expired access token")
+			response.UnauthorizedI18n(c, "auth.invalidAccessToken")
 			return
 		}
 
 		// Stateful check: session must still be in Redis
 		ok, err := sessions.Exists(c.Request.Context(), claims.SessionID)
 		if err != nil || !ok {
-			response.Unauthorized(c, "Session has been revoked")
+			response.UnauthorizedI18n(c, "auth.sessionRevoked")
 			return
 		}
 
@@ -61,7 +61,7 @@ func RoleProtected(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, _ := c.Get(CtxRole)
 		if _, ok := allowed[role.(string)]; !ok {
-			response.Forbidden(c, "Insufficient role")
+			response.ForbiddenI18n(c, "auth.insufficientRole")
 			return
 		}
 		c.Next()
@@ -75,7 +75,7 @@ func MustBeOwnerOrAdmin(paramName string) gin.HandlerFunc {
 		callerRole := c.GetString(CtxRole)
 		resourceOwner := c.Param(paramName)
 		if callerRole != "admin" && callerID != resourceOwner {
-			response.Forbidden(c, "You can only access your own resources")
+			response.ForbiddenI18n(c, "auth.ownResourceOnly")
 			return
 		}
 		c.Next()

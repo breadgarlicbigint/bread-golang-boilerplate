@@ -120,7 +120,7 @@ func (s *PasskeyService) FinishRegistration(ctx context.Context, user *userentit
 	key := regSessionPrefix + user.ID.String()
 	sessionBytes, err := s.rdb.Get(ctx, key).Bytes()
 	if err != nil {
-		return nil, errors.New(400, "CEREMONY_EXPIRED", "Registration session expired. Please start again.")
+		return nil, errors.NewI18n(400, "CEREMONY_EXPIRED", "passkey.ceremonyExpired", "Registration session expired. Please start again.")
 	}
 	var session webauthn.SessionData
 	if err := json.Unmarshal(sessionBytes, &session); err != nil {
@@ -131,12 +131,12 @@ func (s *PasskeyService) FinishRegistration(ctx context.Context, user *userentit
 	// ParseCredentialCreationResponseBody takes an io.Reader
 	parsed, err := protocol.ParseCredentialCreationResponseBody(bytes.NewReader(rawResponse))
 	if err != nil {
-		return nil, errors.New(400, "PASSKEY_INVALID", "Invalid attestation response: "+err.Error())
+		return nil, errors.NewI18n(400, "PASSKEY_INVALID", "passkey.invalidAttestation", "Invalid attestation response: "+err.Error())
 	}
 
 	credential, err := s.webAuth.CreateCredential(waUser, session, parsed)
 	if err != nil {
-		return nil, errors.New(400, "PASSKEY_INVALID", "Passkey registration failed: "+err.Error())
+		return nil, errors.NewI18n(400, "PASSKEY_INVALID", "passkey.invalidAttestation", "Passkey registration failed: "+err.Error())
 	}
 
 	transports := make([]string, 0, len(credential.Transport))
@@ -172,7 +172,7 @@ func (s *PasskeyService) BeginLogin(ctx context.Context, user *userentity.User) 
 		return nil, err
 	}
 	if len(passkeys) == 0 {
-		return nil, errors.New(400, "NO_PASSKEYS", "No passkeys registered for this account")
+		return nil, errors.NewI18n(400, "NO_PASSKEYS", "passkey.noPasskeys", "No passkeys registered for this account")
 	}
 	waUser := &webAuthnUser{user: user, passkeys: passkeys}
 
@@ -199,7 +199,7 @@ func (s *PasskeyService) FinishLogin(ctx context.Context, user *userentity.User,
 	key := authSessionPrefix + user.ID.String()
 	sessionBytes, err := s.rdb.Get(ctx, key).Bytes()
 	if err != nil {
-		return nil, errors.New(400, "CEREMONY_EXPIRED", "Login session expired. Please start again.")
+		return nil, errors.NewI18n(400, "CEREMONY_EXPIRED", "passkey.ceremonyExpired", "Login session expired. Please start again.")
 	}
 	var session webauthn.SessionData
 	if err := json.Unmarshal(sessionBytes, &session); err != nil {
@@ -210,12 +210,12 @@ func (s *PasskeyService) FinishLogin(ctx context.Context, user *userentity.User,
 	// ParseCredentialRequestResponseBody takes an io.Reader
 	parsed, err := protocol.ParseCredentialRequestResponseBody(bytes.NewReader(rawResponse))
 	if err != nil {
-		return nil, errors.New(400, "PASSKEY_AUTH_FAILED", "Invalid assertion response: "+err.Error())
+		return nil, errors.NewI18n(400, "PASSKEY_AUTH_FAILED", "passkey.authFailed", "Invalid assertion response: "+err.Error())
 	}
 
 	credential, err := s.webAuth.ValidateLogin(waUser, session, parsed)
 	if err != nil {
-		return nil, errors.New(401, "PASSKEY_AUTH_FAILED", "Passkey authentication failed: "+err.Error())
+		return nil, errors.NewI18n(401, "PASSKEY_AUTH_FAILED", "passkey.authFailed", "Passkey authentication failed: "+err.Error())
 	}
 
 	credIDBase64 := base64.URLEncoding.EncodeToString(credential.ID)

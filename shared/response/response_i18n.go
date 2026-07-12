@@ -2,6 +2,7 @@ package response
 
 import (
 	"github.com/gin-gonic/gin"
+	apperrors "github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	pkgi18n "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/i18n"
 )
 
@@ -30,9 +31,32 @@ func UnauthorizedI18n(c *gin.Context, key string) {
 	Unauthorized(c, pkgi18n.TC(c, key))
 }
 
+// ForbiddenI18n translates and sends a 403.
+func ForbiddenI18n(c *gin.Context, key string) {
+	Forbidden(c, pkgi18n.TC(c, key))
+}
+
 // NotFoundI18n translates and sends a 404.
 func NotFoundI18n(c *gin.Context, key string) {
 	NotFound(c, pkgi18n.TC(c, key))
+}
+
+// HandleAppError is the single translation point from a service-layer error to
+// an HTTP response. Domain errors (*errors.AppError) translate via their Key
+// when set (falling back to the raw Message otherwise); anything else is
+// logged and reported as a generic translated 500 — the client never sees a
+// raw Go error string. Use this instead of a per-handler handleError copy.
+func HandleAppError(c *gin.Context, err error) {
+	if ae, ok := apperrors.As(err); ok {
+		if ae.Key != "" {
+			ErrorI18n(c, ae.Status, ae.Key)
+		} else {
+			Error(c, ae.Status, ae.Message)
+		}
+		return
+	}
+	LogInternal(err, "unexpected error")
+	InternalServerError(c, pkgi18n.TC(c, "http.500"))
 }
 
 // ValidationErrorI18n maps validator.ValidationErrors to translated field messages.

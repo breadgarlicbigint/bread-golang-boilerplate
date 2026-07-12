@@ -2,9 +2,9 @@ package handler
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/middleware"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/pagination"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
@@ -61,7 +61,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 
 	notifs, total, err := h.svc.ListByUser(c.Request.Context(), userID, q.Page, q.PerPage, unreadOnly)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
 	meta := q.BuildMeta(total)
@@ -69,7 +69,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 	for i, n := range notifs {
 		resp[i] = toResponse(n)
 	}
-	response.OKWithMeta(c, "Notifications fetched", resp, &response.Meta{
+	response.OKWithMetaI18n(c, "notification.listSuccess", resp, &response.Meta{
 		Total: meta.Total, Page: meta.Page, PerPage: meta.PerPage,
 		TotalPage: meta.TotalPage, HasNext: meta.HasNext, HasPrev: meta.HasPrev,
 	})
@@ -78,40 +78,40 @@ func (h *NotificationHandler) List(c *gin.Context) {
 func (h *NotificationHandler) UnreadCount(c *gin.Context) {
 	count, err := h.svc.UnreadCount(c.Request.Context(), mustUserID(c))
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Unread count fetched", notifDTO.UnreadCountResponse{Unread: count})
+	response.OKI18n(c, "notification.unreadCountFetched", notifDTO.UnreadCountResponse{Unread: count})
 }
 
 func (h *NotificationHandler) MarkRead(c *gin.Context) {
 	notifID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid notification ID")
+		response.ErrorI18n(c, http.StatusBadRequest, "notification.invalidID")
 		return
 	}
 	if err := h.svc.MarkRead(c.Request.Context(), notifID, mustUserID(c)); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Marked as read", nil)
+	response.OKI18n(c, "notification.markReadSuccess", nil)
 }
 
 func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 	if err := h.svc.MarkAllRead(c.Request.Context(), mustUserID(c)); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "All notifications marked as read", nil)
+	response.OKI18n(c, "notification.markAllReadSuccess", nil)
 }
 
 func (h *NotificationHandler) GetPreferences(c *gin.Context) {
 	prefs, err := h.svc.GetPreferences(c.Request.Context(), mustUserID(c))
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Preferences fetched", prefs)
+	response.OKI18n(c, "notification.prefsFetched", prefs)
 }
 
 func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
@@ -120,10 +120,10 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdatePreferences(c.Request.Context(), mustUserID(c), req); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Preferences updated", nil)
+	response.OKI18n(c, "notification.prefsUpdated", nil)
 }
 
 func (h *NotificationHandler) RegisterDevice(c *gin.Context) {
@@ -132,15 +132,15 @@ func (h *NotificationHandler) RegisterDevice(c *gin.Context) {
 		return
 	}
 	if err := h.svc.RegisterDevice(c.Request.Context(), mustUserID(c), req); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.Created(c, "Device registered", nil)
+	response.CreatedI18n(c, "notification.deviceRegistered", nil)
 }
 
 func (h *NotificationHandler) RemoveDevice(c *gin.Context) {
 	if err := h.svc.RemoveDevice(c.Request.Context(), mustUserID(c), c.Param("token")); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
 	response.NoContent(c)
@@ -152,10 +152,10 @@ func (h *NotificationHandler) AdminSend(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Send(c.Request.Context(), req); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Notification sent", nil)
+	response.OKI18n(c, "notification.sendSuccess", nil)
 }
 
 func (h *NotificationHandler) Broadcast(c *gin.Context) {
@@ -165,10 +165,10 @@ func (h *NotificationHandler) Broadcast(c *gin.Context) {
 	}
 	success, failed, err := h.svc.Broadcast(c.Request.Context(), req)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Broadcast complete", gin.H{"success": success, "failed": failed})
+	response.OKI18n(c, "notification.broadcastComplete", gin.H{"success": success, "failed": failed})
 }
 
 // TestEmail godoc
@@ -188,10 +188,10 @@ func (h *NotificationHandler) TestEmail(c *gin.Context) {
 		return
 	}
 	if err := h.svc.SendTestEmail(c.Request.Context(), req.To); err != nil {
-		response.OK(c, "Test email failed", notifDTO.TestEmailResponse{Sent: false, Error: err.Error()})
+		response.OKI18n(c, "notification.testEmailFailed", notifDTO.TestEmailResponse{Sent: false, Error: err.Error()})
 		return
 	}
-	response.OK(c, "Test email sent", notifDTO.TestEmailResponse{Sent: true})
+	response.OKI18n(c, "notification.testEmailSent", notifDTO.TestEmailResponse{Sent: true})
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -217,11 +217,3 @@ func toResponse(n *notifEntity.Notification) notifDTO.NotificationResponse {
 	}
 }
 
-func handleErr(c *gin.Context, err error) {
-	if ae, ok := errors.As(err); ok {
-		response.Error(c, ae.Status, ae.Message)
-		return
-	}
-	response.LogInternal(err, "unexpected error")
-	response.InternalServerError(c, "An unexpected error occurred")
-}

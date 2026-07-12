@@ -21,6 +21,7 @@ import { AdminAnalyticsPage } from "./pages/AdminAnalyticsPage";
 import { AppVersionCheckPage } from "./pages/AppVersionCheckPage";
 import { HealthPage } from "./pages/HealthPage";
 import { ApiConsolePage } from "./pages/ApiConsolePage";
+import { I18nComparePage } from "./pages/I18nComparePage";
 import { ActivityLogPage } from "./pages/ActivityLogPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -39,6 +40,7 @@ export function App() {
                 <Route path="/app-version-check" element={<AppVersionCheckPage />} />
                 <Route path="/health" element={<HealthPage />} />
                 <Route path="/console" element={<ApiConsolePage />} />
+                <Route path="/i18n-compare" element={<I18nComparePage />} />
                 <Route path="/activity" element={<ActivityLogPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/" element={<DashboardPage />} />

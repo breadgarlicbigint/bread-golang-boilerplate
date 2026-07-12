@@ -72,6 +72,9 @@ export function Layout() {
           <NavLink to="/console" className={linkClass}>
             API Console
           </NavLink>
+          <NavLink to="/i18n-compare" className={linkClass}>
+            i18n Compare
+          </NavLink>
           <NavLink to="/activity" className={linkClass}>
             Activity Log
           </NavLink>

@@ -3,9 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/middleware"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/validate"
@@ -71,16 +71,16 @@ func (h *PasskeyHandler) RegisterRoutes(rg *gin.RouterGroup, authMw gin.HandlerF
 func (h *PasskeyHandler) BeginRegistration(c *gin.Context) {
 	user, err := h.loadCaller(c)
 	if err != nil {
-		response.Unauthorized(c, "Authentication required")
+		response.ErrorI18n(c, http.StatusUnauthorized, "http.401")
 		return
 	}
 	attachment := c.DefaultQuery("attachment", "platform")
 	opts, err := h.svc.BeginRegistration(c.Request.Context(), user, attachment)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Registration challenge ready", opts)
+	response.OKI18n(c, "passkey.registrationBegin", opts)
 }
 
 // FinishRegistration godoc
@@ -94,7 +94,7 @@ func (h *PasskeyHandler) BeginRegistration(c *gin.Context) {
 func (h *PasskeyHandler) FinishRegistration(c *gin.Context) {
 	user, err := h.loadCaller(c)
 	if err != nil {
-		response.Unauthorized(c, "Authentication required")
+		response.ErrorI18n(c, http.StatusUnauthorized, "http.401")
 		return
 	}
 	var req dto.FinishRegistrationRequest
@@ -106,10 +106,10 @@ func (h *PasskeyHandler) FinishRegistration(c *gin.Context) {
 
 	pk, err := h.svc.FinishRegistration(c.Request.Context(), user, req.FriendlyName, attachment, rawResp)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.Created(c, "Passkey registered", toResponse(pk))
+	response.CreatedI18n(c, "passkey.registrationSuccess", toResponse(pk))
 }
 
 // BeginDiscoverableLogin godoc
@@ -120,10 +120,10 @@ func (h *PasskeyHandler) FinishRegistration(c *gin.Context) {
 func (h *PasskeyHandler) BeginDiscoverableLogin(c *gin.Context) {
 	opts, sessionToken, err := h.svc.BeginDiscoverableLogin(c.Request.Context())
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Login challenge ready", gin.H{"options": opts, "sessionToken": sessionToken})
+	response.OKI18n(c, "passkey.loginBegin", gin.H{"options": opts, "sessionToken": sessionToken})
 }
 
 // FinishDiscoverableLogin godoc
@@ -141,10 +141,10 @@ func (h *PasskeyHandler) FinishDiscoverableLogin(c *gin.Context) {
 	rawResp, _ := json.Marshal(req.Response)
 	pk, err := h.svc.FinishLogin(c.Request.Context(), nil, rawResp)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Login successful", gin.H{"passkeyId": pk.ID, "userId": pk.UserID})
+	response.OKI18n(c, "auth.loginSuccess", gin.H{"passkeyId": pk.ID, "userId": pk.UserID})
 }
 
 func (h *PasskeyHandler) BeginIdentifiedLogin(c *gin.Context) {
@@ -164,19 +164,19 @@ func (h *PasskeyHandler) FinishIdentifiedLogin(c *gin.Context) {
 func (h *PasskeyHandler) List(c *gin.Context) {
 	user, err := h.loadCaller(c)
 	if err != nil {
-		response.Unauthorized(c, "Authentication required")
+		response.ErrorI18n(c, http.StatusUnauthorized, "http.401")
 		return
 	}
 	passkeys, err := h.svc.ListByUser(c.Request.Context(), user.ID)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
 	resp := make([]dto.PasskeyResponse, len(passkeys))
 	for i, pk := range passkeys {
 		resp[i] = toResponse(pk)
 	}
-	response.OK(c, "Passkeys fetched", resp)
+	response.OKI18n(c, "passkey.listSuccess", resp)
 }
 
 // Delete godoc
@@ -189,16 +189,16 @@ func (h *PasskeyHandler) List(c *gin.Context) {
 func (h *PasskeyHandler) Delete(c *gin.Context) {
 	user, err := h.loadCaller(c)
 	if err != nil {
-		response.Unauthorized(c, "Authentication required")
+		response.ErrorI18n(c, http.StatusUnauthorized, "http.401")
 		return
 	}
 	passkeyID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid passkey ID")
+		response.ErrorI18n(c, http.StatusBadRequest, "passkey.invalidID")
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), passkeyID, user.ID); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
 	response.NoContent(c)
@@ -226,11 +226,3 @@ func toResponse(pk *pkentity.Passkey) dto.PasskeyResponse {
 	}
 }
 
-func handleErr(c *gin.Context, err error) {
-	if ae, ok := errors.As(err); ok {
-		response.Error(c, ae.Status, ae.Message)
-		return
-	}
-	response.LogInternal(err, "unexpected error")
-	response.InternalServerError(c, "An unexpected error occurred")
-}

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/middleware"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/pagination"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
@@ -68,10 +67,10 @@ func (h *UserHandler) Create(c *gin.Context) {
 	_, lang := pkgi18n.FromContext(c)
 	u, err := h.svc.Create(c.Request.Context(), lang, req)
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.Created(c, "User created", usersvc.MapToResponse(u))
+	response.CreatedI18n(c, "user.createSuccess", usersvc.MapToResponse(u))
 }
 
 // List godoc
@@ -90,7 +89,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	q := pagination.FromContext(c)
 	users, total, err := h.svc.List(c.Request.Context(), q)
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
 	meta := q.BuildMeta(total)
@@ -98,7 +97,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	for i, u := range users {
 		resp[i] = usersvc.MapToResponse(u)
 	}
-	response.OKWithMeta(c, "Users fetched", resp, &response.Meta{
+	response.OKWithMetaI18n(c, "user.listSuccess", resp, &response.Meta{
 		Total:     meta.Total,
 		Page:      meta.Page,
 		PerPage:   meta.PerPage,
@@ -120,10 +119,10 @@ func (h *UserHandler) List(c *gin.Context) {
 func (h *UserHandler) GetByID(c *gin.Context) {
 	u, err := h.svc.GetByID(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "User fetched", usersvc.MapToResponse(u))
+	response.OKI18n(c, "user.fetchSuccess", usersvc.MapToResponse(u))
 }
 
 // GetMe godoc
@@ -136,10 +135,10 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 func (h *UserHandler) GetMe(c *gin.Context) {
 	u, err := h.svc.GetByID(c.Request.Context(), c.GetString(middleware.CtxUserID))
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Profile fetched", usersvc.MapToResponse(u))
+	response.OKI18n(c, "user.profileFetched", usersvc.MapToResponse(u))
 }
 
 // Update godoc
@@ -161,10 +160,10 @@ func (h *UserHandler) Update(c *gin.Context) {
 	}
 	u, err := h.svc.Update(c.Request.Context(), c.Param("id"), req)
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "User updated", usersvc.MapToResponse(u))
+	response.OKI18n(c, "user.updateSuccess", usersvc.MapToResponse(u))
 }
 
 // UpdateMe godoc
@@ -184,10 +183,10 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 	}
 	u, err := h.svc.Update(c.Request.Context(), c.GetString(middleware.CtxUserID), req)
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Profile updated", usersvc.MapToResponse(u))
+	response.OKI18n(c, "user.profileUpdated", usersvc.MapToResponse(u))
 }
 
 // ChangePassword godoc
@@ -207,10 +206,10 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	if err := h.svc.ChangePassword(c.Request.Context(), c.GetString(middleware.CtxUserID), req); err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Password changed successfully", nil)
+	response.OKI18n(c, "user.passwordChanged", nil)
 }
 
 // Block godoc
@@ -229,10 +228,10 @@ func (h *UserHandler) Block(c *gin.Context) {
 		return
 	}
 	if err := h.svc.BlockUser(c.Request.Context(), c.Param("id"), req.Reason); err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "User blocked", nil)
+	response.OKI18n(c, "user.blockSuccess", nil)
 }
 
 // Unblock godoc
@@ -244,10 +243,10 @@ func (h *UserHandler) Block(c *gin.Context) {
 // @Router       /v1/users/{id}/unblock [post]
 func (h *UserHandler) Unblock(c *gin.Context) {
 	if err := h.svc.UnblockUser(c.Request.Context(), c.Param("id")); err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "User unblocked", nil)
+	response.OKI18n(c, "user.unblockSuccess", nil)
 }
 
 // Delete godoc
@@ -259,17 +258,8 @@ func (h *UserHandler) Unblock(c *gin.Context) {
 // @Router       /v1/users/{id} [delete]
 func (h *UserHandler) Delete(c *gin.Context) {
 	if err := h.svc.Delete(c.Request.Context(), c.Param("id")); err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
 	response.NoContent(c)
-}
-
-func handleError(c *gin.Context, err error) {
-	if ae, ok := errors.As(err); ok {
-		response.Error(c, ae.Status, ae.Message)
-		return
-	}
-	response.LogInternal(err, "unexpected error")
-	response.InternalServerError(c, "An unexpected error occurred")
 }

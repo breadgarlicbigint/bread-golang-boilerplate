@@ -9,16 +9,27 @@ import (
 type AppError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	Status  int    `json:"-"`
-	Err     error  `json:"-"`
+	// Key is the locales/*.json key used to translate Message for the request's
+	// x-custom-lang. Empty for errors that don't have (or don't need) a
+	// translation — callers fall back to the raw Message in that case.
+	Key    string `json:"-"`
+	Status int    `json:"-"`
+	Err    error  `json:"-"`
 }
 
 func (e *AppError) Error() string { return e.Message }
 func (e *AppError) Unwrap() error { return e.Err }
 
-// New creates a new AppError.
+// New creates a new AppError with no i18n key — Message is sent as-is
+// regardless of x-custom-lang. Prefer NewI18n for anything user-facing.
 func New(status int, code, message string) *AppError {
 	return &AppError{Status: status, Code: code, Message: message}
+}
+
+// NewI18n creates a new AppError whose Message is translated via key when a
+// handler renders it through response.HandleAppError / ErrorI18n.
+func NewI18n(status int, code, key, message string) *AppError {
+	return &AppError{Status: status, Code: code, Key: key, Message: message}
 }
 
 // Wrap wraps an underlying error.
@@ -35,37 +46,37 @@ func As(err error) (*AppError, bool) {
 // ── Sentinel errors ───────────────────────────────────────────────────────────
 
 var (
-	ErrNotFound        = New(http.StatusNotFound, "NOT_FOUND", "Resource not found")
-	ErrUnauthorized    = New(http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
-	ErrForbidden       = New(http.StatusForbidden, "FORBIDDEN", "Access denied")
-	ErrConflict        = New(http.StatusConflict, "CONFLICT", "Resource already exists")
-	ErrBadRequest      = New(http.StatusBadRequest, "BAD_REQUEST", "Invalid request")
-	ErrInternal        = New(http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
-	ErrTooManyRequests = New(http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "Rate limit exceeded")
+	ErrNotFound        = NewI18n(http.StatusNotFound, "NOT_FOUND", "http.404", "Resource not found")
+	ErrUnauthorized    = NewI18n(http.StatusUnauthorized, "UNAUTHORIZED", "http.401", "Authentication required")
+	ErrForbidden       = NewI18n(http.StatusForbidden, "FORBIDDEN", "http.403", "Access denied")
+	ErrConflict        = NewI18n(http.StatusConflict, "CONFLICT", "http.409", "Resource already exists")
+	ErrBadRequest      = NewI18n(http.StatusBadRequest, "BAD_REQUEST", "http.400", "Invalid request")
+	ErrInternal        = NewI18n(http.StatusInternalServerError, "INTERNAL_ERROR", "http.500", "Internal server error")
+	ErrTooManyRequests = NewI18n(http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "http.429", "Rate limit exceeded")
 
 	// Auth
-	ErrInvalidCredentials = New(http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
-	ErrAccountLocked      = New(http.StatusUnauthorized, "ACCOUNT_LOCKED", "Account is temporarily locked")
-	ErrTokenExpired       = New(http.StatusUnauthorized, "TOKEN_EXPIRED", "Token has expired")
-	ErrTokenInvalid       = New(http.StatusUnauthorized, "TOKEN_INVALID", "Token is invalid")
-	ErrSessionRevoked     = New(http.StatusUnauthorized, "SESSION_REVOKED", "Session has been revoked")
-	ErrEmailNotVerified   = New(http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Email address not verified")
+	ErrInvalidCredentials = NewI18n(http.StatusUnauthorized, "INVALID_CREDENTIALS", "auth.invalidCredentials", "Invalid email or password")
+	ErrAccountLocked      = NewI18n(http.StatusUnauthorized, "ACCOUNT_LOCKED", "auth.accountLocked", "Account is temporarily locked")
+	ErrTokenExpired       = NewI18n(http.StatusUnauthorized, "TOKEN_EXPIRED", "auth.tokenExpired", "Token has expired")
+	ErrTokenInvalid       = NewI18n(http.StatusUnauthorized, "TOKEN_INVALID", "auth.tokenInvalid", "Token is invalid")
+	ErrSessionRevoked     = NewI18n(http.StatusUnauthorized, "SESSION_REVOKED", "auth.sessionRevoked", "Session has been revoked")
+	ErrEmailNotVerified   = NewI18n(http.StatusForbidden, "EMAIL_NOT_VERIFIED", "auth.emailNotVerified", "Email address not verified")
 
 	// User
-	ErrUserNotFound      = New(http.StatusNotFound, "USER_NOT_FOUND", "User not found")
-	ErrEmailTaken        = New(http.StatusConflict, "EMAIL_TAKEN", "Email is already registered")
-	ErrUsernameTaken     = New(http.StatusConflict, "USERNAME_TAKEN", "Username is already taken")
-	ErrInvalidPassword   = New(http.StatusBadRequest, "INVALID_PASSWORD", "Password does not meet requirements")
-	ErrPasswordSameAsOld = New(http.StatusBadRequest, "PASSWORD_SAME_AS_OLD", "New password must be different from the current password")
+	ErrUserNotFound      = NewI18n(http.StatusNotFound, "USER_NOT_FOUND", "user.notFound", "User not found")
+	ErrEmailTaken        = NewI18n(http.StatusConflict, "EMAIL_TAKEN", "user.emailTaken", "Email is already registered")
+	ErrUsernameTaken     = NewI18n(http.StatusConflict, "USERNAME_TAKEN", "user.usernameTaken", "Username is already taken")
+	ErrInvalidPassword   = NewI18n(http.StatusBadRequest, "INVALID_PASSWORD", "user.invalidPassword", "Password does not meet requirements")
+	ErrPasswordSameAsOld = NewI18n(http.StatusBadRequest, "PASSWORD_SAME_AS_OLD", "user.passwordSameAsOld", "New password must be different from the current password")
 
 	// API Key
-	ErrAPIKeyNotFound = New(http.StatusNotFound, "API_KEY_NOT_FOUND", "API key not found")
-	ErrAPIKeyInvalid  = New(http.StatusUnauthorized, "API_KEY_INVALID", "API key is invalid or inactive")
-	ErrAPIKeyExpired  = New(http.StatusUnauthorized, "API_KEY_EXPIRED", "API key has expired")
+	ErrAPIKeyNotFound = NewI18n(http.StatusNotFound, "API_KEY_NOT_FOUND", "apiKey.notFound", "API key not found")
+	ErrAPIKeyInvalid  = NewI18n(http.StatusUnauthorized, "API_KEY_INVALID", "apiKey.invalid", "API key is invalid or inactive")
+	ErrAPIKeyExpired  = NewI18n(http.StatusUnauthorized, "API_KEY_EXPIRED", "apiKey.expired", "API key has expired")
 
 	// Role
-	ErrRoleNotFound = New(http.StatusNotFound, "ROLE_NOT_FOUND", "Role not found")
+	ErrRoleNotFound = NewI18n(http.StatusNotFound, "ROLE_NOT_FOUND", "role.notFound", "Role not found")
 
 	// Feature flag
-	ErrFeatureDisabled = New(http.StatusForbidden, "FEATURE_DISABLED", "This feature is not enabled")
+	ErrFeatureDisabled = NewI18n(http.StatusForbidden, "FEATURE_DISABLED", "featureFlag.disabled", "This feature is not enabled")
 )

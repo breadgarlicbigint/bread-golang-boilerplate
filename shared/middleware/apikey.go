@@ -18,12 +18,12 @@ func APIKeyProtected(header string, validator APIKeyValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw := c.GetHeader(header)
 		if raw == "" {
-			response.Unauthorized(c, "API key missing")
+			response.UnauthorizedI18n(c, "apiKey.missing")
 			return
 		}
 		keyID, err := validator.Validate(c.Request.Context(), raw)
 		if err != nil {
-			response.Unauthorized(c, "Invalid or inactive API key")
+			response.UnauthorizedI18n(c, "apiKey.invalid")
 			return
 		}
 		c.Set(CtxAPIKeyID, keyID)

@@ -2,11 +2,11 @@ package handler
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/appversion/middleware"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/appversion/service"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/validate"
 )
@@ -55,16 +55,16 @@ func (h *AppVersionHandler) Check(c *gin.Context) {
 		version = c.Query("version")
 	}
 	if platformStr == "" || version == "" {
-		response.BadRequest(c, "platform and version are required (header or query param)")
+		response.ErrorI18n(c, http.StatusBadRequest, "appVersion.missingParams")
 		return
 	}
 
 	result, err := h.svc.Check(c.Request.Context(), service.Platform(platformStr), version)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Version check complete", result)
+	response.OKI18n(c, "appVersion.checkSuccess", result)
 }
 
 // List godoc
@@ -77,10 +77,10 @@ func (h *AppVersionHandler) Check(c *gin.Context) {
 func (h *AppVersionHandler) List(c *gin.Context) {
 	versions, err := h.svc.List(c.Request.Context())
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Versions fetched", versions)
+	response.OKI18n(c, "appVersion.listSuccess", versions)
 }
 
 // Upsert godoc
@@ -96,7 +96,7 @@ func (h *AppVersionHandler) Upsert(c *gin.Context) {
 	switch platform {
 	case service.PlatformIOS, service.PlatformAndroid, service.PlatformWeb:
 	default:
-		response.BadRequest(c, "Invalid platform. Use: ios | android | web")
+		response.ErrorI18n(c, http.StatusBadRequest, "appVersion.invalidPlatform")
 		return
 	}
 
@@ -114,17 +114,8 @@ func (h *AppVersionHandler) Upsert(c *gin.Context) {
 	av, err := h.svc.Upsert(c.Request.Context(), platform,
 		req.CurrentVersion, req.MinVersion, req.ForceUpdate, req.ReleaseNotes, req.StoreURL)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Version policy updated", av)
-}
-
-func handleErr(c *gin.Context, err error) {
-	if ae, ok := errors.As(err); ok {
-		response.Error(c, ae.Status, ae.Message)
-		return
-	}
-	response.LogInternal(err, "unexpected error")
-	response.InternalServerError(c, "An unexpected error occurred")
+	response.OKI18n(c, "appVersion.upsertSuccess", av)
 }

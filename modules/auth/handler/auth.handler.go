@@ -5,7 +5,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/auth/dto"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/middleware"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/validate"
@@ -60,10 +59,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	resp, err := h.svc.Login(c.Request.Context(), req, c.ClientIP())
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Login successful", resp)
+	response.OKI18n(c, "auth.loginSuccess", resp)
 }
 
 // Register godoc
@@ -84,10 +83,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	resp, err := h.svc.Register(c.Request.Context(), req, c.ClientIP())
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.Created(c, "Registration successful", resp)
+	response.CreatedI18n(c, "auth.registerSuccess", resp)
 }
 
 // Refresh godoc
@@ -107,10 +106,10 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	}
 	resp, err := h.svc.Refresh(c.Request.Context(), req.RefreshToken)
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Token refreshed", resp)
+	response.OKI18n(c, "auth.refreshSuccess", resp)
 }
 
 // Logout godoc
@@ -122,10 +121,10 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 // @Router      /v1/auth/logout [delete]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	if err := h.svc.Logout(c.Request.Context(), c.GetString(middleware.CtxSessionID)); err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Logged out successfully", nil)
+	response.OKI18n(c, "auth.logoutSuccess", nil)
 }
 
 // LogoutAll godoc
@@ -136,10 +135,10 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 // @Router      /v1/auth/logout-all [delete]
 func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	if err := h.svc.LogoutAll(c.Request.Context(), c.GetString(middleware.CtxUserID)); err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Logged out from all devices", nil)
+	response.OKI18n(c, "auth.logoutAllSuccess", nil)
 }
 
 // Enable2FA godoc
@@ -151,10 +150,10 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 func (h *AuthHandler) Enable2FA(c *gin.Context) {
 	resp, err := h.svc.Enable2FA(c.Request.Context(), c.GetString(middleware.CtxUserID), "")
 	if err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "2FA setup initiated. Scan the QR code with your authenticator app.", resp)
+	response.OKI18n(c, "auth.twoFASetupInitiated", resp)
 }
 
 // Verify2FA godoc
@@ -173,17 +172,8 @@ func (h *AuthHandler) Verify2FA(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Verify2FA(c.Request.Context(), c.GetString(middleware.CtxUserID), req.Code, ""); err != nil {
-		handleError(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Two-factor authentication activated", nil)
-}
-
-func handleError(c *gin.Context, err error) {
-	if ae, ok := errors.As(err); ok {
-		response.Error(c, ae.Status, ae.Message)
-		return
-	}
-	response.LogInternal(err, "unexpected error")
-	response.InternalServerError(c, "An unexpected error occurred")
+	response.OKI18n(c, "auth.twoFAVerifySuccess", nil)
 }

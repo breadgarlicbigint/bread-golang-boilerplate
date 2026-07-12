@@ -34,7 +34,18 @@
     "passkeyLoginSuccess": "Autentikasi passkey berhasil",
     "passwordResetEmailSent": "Email reset kata sandi telah dikirim",
     "passwordResetSuccess": "Reset kata sandi berhasil",
-    "emailVerified": "Alamat email berhasil diverifikasi"
+    "emailVerified": "Alamat email berhasil diverifikasi",
+    "oauthMissingParams": "Parameter state atau code tidak ada",
+    "oauthInvalidState": "State OAuth tidak valid — kemungkinan serangan CSRF",
+    "githubAuthFailed": "Autentikasi GitHub gagal",
+    "githubNoVerifiedEmail": "Akun GitHub tidak memiliki email publik yang terverifikasi. Harap tambahkan di github.com/settings/emails",
+    "appleAuthFailed": "Autentikasi Apple gagal",
+    "accountCreateFailed": "Gagal membuat akun",
+    "tokenIssueFailed": "Gagal menerbitkan token",
+    "missingAuthHeader": "Header Authorization tidak ada atau tidak valid",
+    "invalidAccessToken": "Token akses tidak valid atau telah kedaluwarsa",
+    "insufficientRole": "Peran tidak mencukupi",
+    "ownResourceOnly": "Anda hanya dapat mengakses sumber daya milik Anda sendiri"
   },
   "user": {
     "fetchSuccess": "Pengguna berhasil diambil",
@@ -49,7 +60,9 @@
     "profileUpdated": "Profil berhasil diperbarui",
     "notFound": "Pengguna tidak ditemukan",
     "emailTaken": "Email sudah terdaftar",
-    "usernameTaken": "Nama pengguna sudah digunakan"
+    "usernameTaken": "Nama pengguna sudah digunakan",
+    "invalidPassword": "Kata sandi tidak memenuhi persyaratan",
+    "passwordSameAsOld": "Kata sandi baru harus berbeda dari kata sandi saat ini"
   },
   "mobile": {
     "otpSent": "Kode verifikasi telah dikirim",
@@ -67,7 +80,10 @@
     "updateAvailable": "Versi baru tersedia",
     "updateRequired": "Pembaruan diperlukan. Harap perbarui aplikasi untuk melanjutkan.",
     "listSuccess": "Kebijakan versi berhasil diambil",
-    "upsertSuccess": "Kebijakan versi berhasil diperbarui"
+    "upsertSuccess": "Kebijakan versi berhasil diperbarui",
+    "notFound": "Tidak ada kebijakan versi untuk platform ini",
+    "missingParams": "platform dan version wajib diisi (header atau parameter query)",
+    "invalidPlatform": "Platform tidak valid. Gunakan: ios | android | web"
   },
   "notification": {
     "sendSuccess": "Notifikasi berhasil dikirim",
@@ -77,7 +93,18 @@
     "prefsUpdated": "Preferensi notifikasi diperbarui",
     "prefsFetched": "Preferensi notifikasi berhasil diambil",
     "deviceRegistered": "Token perangkat terdaftar",
-    "deviceRemoved": "Token perangkat dihapus"
+    "deviceRemoved": "Token perangkat dihapus",
+    "unreadCountFetched": "Jumlah belum dibaca berhasil diambil",
+    "invalidID": "ID notifikasi tidak valid",
+    "broadcastComplete": "Siaran selesai",
+    "testEmailFailed": "Email uji coba gagal",
+    "testEmailSent": "Email uji coba terkirim"
+  },
+  "analytics": {
+    "fetchSuccess": "Data berhasil diambil",
+    "dateRangeRequired": "startDate dan endDate wajib diisi (YYYY-MM-DD)",
+    "invalidDateFormat": "Format tanggal tidak valid — gunakan YYYY-MM-DD",
+    "queryFailed": "Kueri analitik gagal"
   },
   "health": {
     "healthy": "Layanan berjalan normal",

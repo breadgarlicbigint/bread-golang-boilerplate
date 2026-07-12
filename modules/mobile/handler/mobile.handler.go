@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/middleware"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/validate"
@@ -69,10 +68,10 @@ func (h *MobileHandler) SendOTP(c *gin.Context) {
 	correlationID := c.GetString("requestId")
 
 	if err := h.svc.SendOTP(c.Request.Context(), userID, req.E164, correlationID, channel); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "OTP sent successfully", gin.H{"channel": string(channel), "e164": req.E164})
+	response.OKI18n(c, "mobile.otpSent", gin.H{"channel": string(channel), "e164": req.E164})
 }
 
 // Verify godoc
@@ -95,10 +94,10 @@ func (h *MobileHandler) Verify(c *gin.Context) {
 
 	userID, _ := uuid.Parse(c.GetString(middleware.CtxUserID))
 	if err := h.svc.VerifyOTP(c.Request.Context(), userID, req.E164, req.Code); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Mobile number verified", nil)
+	response.OKI18n(c, "mobile.verifySuccess", nil)
 }
 
 // List godoc
@@ -112,10 +111,10 @@ func (h *MobileHandler) List(c *gin.Context) {
 	userID, _ := uuid.Parse(c.GetString(middleware.CtxUserID))
 	mobiles, err := h.svc.ListByUser(c.Request.Context(), userID)
 	if err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Mobiles fetched", mobiles)
+	response.OKI18n(c, "mobile.listSuccess", mobiles)
 }
 
 // SetPrimary godoc
@@ -128,10 +127,10 @@ func (h *MobileHandler) List(c *gin.Context) {
 func (h *MobileHandler) SetPrimary(c *gin.Context) {
 	userID, _ := uuid.Parse(c.GetString(middleware.CtxUserID))
 	if err := h.svc.SetPrimary(c.Request.Context(), userID, c.Param("e164")); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
-	response.OK(c, "Primary mobile updated", nil)
+	response.OKI18n(c, "mobile.primaryUpdated", nil)
 }
 
 // Delete godoc
@@ -144,17 +143,8 @@ func (h *MobileHandler) SetPrimary(c *gin.Context) {
 func (h *MobileHandler) Delete(c *gin.Context) {
 	userID, _ := uuid.Parse(c.GetString(middleware.CtxUserID))
 	if err := h.svc.Delete(c.Request.Context(), userID, c.Param("e164")); err != nil {
-		handleErr(c, err)
+		response.HandleAppError(c, err)
 		return
 	}
 	response.NoContent(c)
-}
-
-func handleErr(c *gin.Context, err error) {
-	if ae, ok := errors.As(err); ok {
-		response.Error(c, ae.Status, ae.Message)
-		return
-	}
-	response.LogInternal(err, "unexpected error")
-	response.InternalServerError(c, "An unexpected error occurred")
 }
