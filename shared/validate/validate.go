@@ -43,17 +43,17 @@ func init() {
 //	if !validate.BindJSON(c, &req) {
 //	    return
 //	}
-func BindJSON(c *gin.Context, req interface{}) bool {
+func BindJSON(c *gin.Context, req any) bool {
 	// Step 1 — decode JSON
 	if err := c.ShouldBindJSON(req); err != nil {
-		response.BadRequest(c, "Invalid request body: "+sanitiseBindError(err))
+		response.BadRequest(c, pkgi18n.TC(c, "validation.invalidBody")+": "+sanitiseBindError(err))
 		return false
 	}
 
 	// Step 2 — struct validation
 	if err := v.Struct(req); err != nil {
 		response.UnprocessableEntity(c,
-			"Validation failed",
+			pkgi18n.TC(c, "validation.failed"),
 			buildDetails(c, err)...,
 		)
 		return false
@@ -63,14 +63,14 @@ func BindJSON(c *gin.Context, req interface{}) bool {
 }
 
 // BindQuery binds query parameters and validates the struct.
-func BindQuery(c *gin.Context, req interface{}) bool {
+func BindQuery(c *gin.Context, req any) bool {
 	if err := c.ShouldBindQuery(req); err != nil {
-		response.BadRequest(c, "Invalid query parameters: "+sanitiseBindError(err))
+		response.BadRequest(c, pkgi18n.TC(c, "validation.invalidQuery")+": "+sanitiseBindError(err))
 		return false
 	}
 	if err := v.Struct(req); err != nil {
 		response.UnprocessableEntity(c,
-			"Validation failed",
+			pkgi18n.TC(c, "validation.failed"),
 			buildDetails(c, err)...,
 		)
 		return false

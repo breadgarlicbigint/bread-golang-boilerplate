@@ -58,17 +58,3 @@ func HandleAppError(c *gin.Context, err error) {
 	LogInternal(err, "unexpected error")
 	InternalServerError(c, pkgi18n.TC(c, "http.500"))
 }
-
-// ValidationErrorI18n maps validator.ValidationErrors to translated field messages.
-func ValidationErrorI18n(c *gin.Context, fields []ErrorDetail) {
-	tr, lang := pkgi18n.FromContext(c)
-	if tr != nil {
-		for i, f := range fields {
-			translated := tr.T(lang, "validation."+f.Message, map[string]string{"Field": f.Field})
-			if translated != "validation."+f.Message {
-				fields[i].Message = translated
-			}
-		}
-	}
-	UnprocessableEntity(c, pkgi18n.TC(c, "http.422"), fields...)
-}

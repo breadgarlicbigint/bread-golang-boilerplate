@@ -152,6 +152,9 @@
     "ready": "Service is ready"
   },
   "validation": {
+    "failed": "Validation failed",
+    "invalidBody": "Invalid request body",
+    "invalidQuery": "Invalid query parameters",
     "required": "{{.Field}} is required",
     "email": "{{.Field}} must be a valid email address",
     "min": "{{.Field}} must be at least {{.Param}} characters",

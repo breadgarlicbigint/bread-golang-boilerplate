@@ -721,13 +721,20 @@ email.*         ← All email template text tokens
 
 **Rules:**
 - Prefer adding keys to BOTH `en.json` and `id.json`. `apiKey.*`, `passkey.*`,
-  `tenant.*`, `role.*`, `featureFlag.*`, and `validation.*` are the current
-  exception — they're English-only today and intentionally rely on the
-  fallback below; don't feel obligated to add Indonesian translations there
-  unless you're doing a real localization pass. `auth.*`, `user.*`,
-  `mobile.*`, `appVersion.*`, `notification.*`, `analytics.*`, `http.*`, and
-  `health.*` are fully bilingual — keep new keys in those namespaces
+  `tenant.*`, `role.*`, and `featureFlag.*` are the current exception —
+  they're English-only today and intentionally rely on the fallback below;
+  don't feel obligated to add Indonesian translations there unless you're
+  doing a real localization pass. `auth.*`, `user.*`, `mobile.*`,
+  `appVersion.*`, `notification.*`, `analytics.*`, `http.*`, `health.*`, and
+  `validation.*` are fully bilingual — keep new keys in those namespaces
   bilingual too.
+- `validation.*` covers both the per-field validator-tag messages
+  (`validation.required`, `validation.min`, …) AND the two response-envelope
+  messages `shared/validate.BindJSON`/`BindQuery` use directly:
+  `validation.failed` (422, struct validation failed) and
+  `validation.invalidBody`/`validation.invalidQuery` (400, malformed
+  JSON/query — only the prefix is translated, the appended Go parse error
+  stays raw since it isn't meaningfully translatable).
 - Use `{name}`, `{field}` etc. for variable interpolation (NOT Go template syntax)
 - Missing keys in non-default languages fall back to `en` automatically
 - Every handler response should go through `response.*I18n` with a locale

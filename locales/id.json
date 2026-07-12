@@ -111,6 +111,18 @@
     "degraded": "Layanan mengalami gangguan",
     "ready": "Layanan siap"
   },
+  "validation": {
+    "failed": "Validasi gagal",
+    "invalidBody": "Isi permintaan tidak valid",
+    "invalidQuery": "Parameter kueri tidak valid",
+    "required": "{{.Field}} wajib diisi",
+    "email": "{{.Field}} harus berupa alamat email yang valid",
+    "min": "{{.Field}} minimal {{.Param}} karakter",
+    "max": "{{.Field}} maksimal {{.Param}} karakter",
+    "alphanum": "{{.Field}} hanya boleh berisi huruf dan angka",
+    "e164": "{{.Field}} harus berupa nomor telepon yang valid dalam format E.164",
+    "oneof": "{{.Field}} harus salah satu dari: {{.Param}}"
+  },
   "email": {
     "layout": {
       "brandName": "Bread Boilerplate",
