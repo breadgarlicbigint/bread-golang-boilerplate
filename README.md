@@ -19,6 +19,7 @@ A production-ready **Go** REST API boilerplate inspired by [ack-nestjs-boilerpla
 | Background jobs | BullMQ | **asynq** (Redis, default) — or **RabbitMQ** / **Kafka** via `QUEUE_DRIVER` |
 | Realtime (WebSocket/SSE) | — | **gorilla/websocket** + SSE (`pkg/realtime`, `modules/realtime`) — private per-user channel + generic pub/sub |
 | MQTT | — | **eclipse/paho.mqtt.golang** (`pkg/mqtt`, `modules/iot`) — device-telemetry demo, optional Mosquitto broker |
+| Metrics | — | **prometheus/client_golang** (`pkg/metrics`) — HTTP + MongoDB + Go runtime metrics, `/metrics`, visualized with Grafana |
 | Config | @nestjs/config | **viper** |
 | Validation | class-validator | **go-playground/validator** |
 | Logging | Winston | **zap** (Uber) |
@@ -88,6 +89,11 @@ A production-ready **Go** REST API boilerplate inspired by [ack-nestjs-boilerpla
 - **Notification → realtime bridge** — `NotificationService.Send`/`Broadcast` push a live event on top of their normal email/push/in-app delivery, visible instantly on any connected WebSocket/SSE client
 - **MQTT device-telemetry demo** — `POST /v1/admin/iot/devices/:id/simulate` publishes to an MQTT broker as if a real device sent it; a subscriber inside the API persists the reading and forwards it onto the realtime pub/sub topic `iot:telemetry`, so the full publish → subscribe → persist → live-push chain is exercisable end-to-end from the web test client
 
+### 📈 Monitoring
+- **Prometheus metrics** — `GET /metrics` (always on, no config) exposes HTTP request count/latency by route+status, MongoDB command count/latency by operation+collection, and Go runtime/process stats
+- **MongoDB command logging** — every non-heartbeat MongoDB command is logged via zap (operation, collection, duration, outcome) alongside the metrics, driven by the same `event.CommandMonitor`
+- **Grafana dashboard** — `make docker-monitoring` starts Prometheus + Grafana with the datasource and a **Bread API Overview** dashboard pre-provisioned, no manual setup
+
 ### 📡 Integrations
 - **Sentry** error tracking + traces
 - **Transactional email** — AWS SES or SMTP (selected via `MAIL_DRIVER`), React Email templates, bilingual (`en`/`id`) via `pkg/i18n`, delivered asynchronously through the job queue
@@ -140,6 +146,7 @@ bread-golang-boilerplate/
 │   ├── i18n/                     # Locale loader + Translator + Gin middleware
 │   ├── jwt/                      # ES256/ES512 token manager
 │   ├── logger/                   # Zap factory
+│   ├── metrics/                  # Prometheus registry: HTTP middleware, MongoDB CommandMonitor, /metrics
 │   ├── mqtt/                     # paho MQTT client wrapper (modules/iot)
 │   ├── realtime/                 # WebSocket/SSE fan-out Hub (modules/realtime)
 │   ├── sms/                      # Twilio SMS + WhatsApp sender
@@ -153,6 +160,7 @@ bread-golang-boilerplate/
 │       └── tasks/                # Shared handlers for the RabbitMQ/Kafka workers
 ├── locales/                      # en.json, id.json — i18n strings incl. email tokens
 ├── email-templates/              # React Email .tsx source (build-time, Node.js only)
+├── monitoring/                   # Prometheus scrape config + Grafana provisioning/dashboard
 ├── web/                          # React + TS test client (Vite) — see "Web Test Client" below
 ├── scripts/
 │   ├── seed/                     # Seed roles, users, feature flags, app versions
@@ -331,6 +339,7 @@ make generate-keys
 | GET | `/health` |
 | GET | `/health/live` |
 | GET | `/health/ready` |
+| GET | `/metrics` (Prometheus scrape — HTTP + MongoDB + Go runtime metrics) |
 
 > **Not yet exposed via REST:** `apikey` and `featureflag` are fully
 > implemented at the service layer (used internally by
@@ -425,6 +434,10 @@ optional integrations — each is disabled gracefully if unconfigured:
 | `QUEUE_DRIVER` (`redis` \| `rabbitmq` \| `kafka`) | Default background job backend — must match a worker process you run |
 | `QUEUE_TRANSACTIONAL_DRIVER` / `QUEUE_PROMOTIONAL_DRIVER` | Optional per-workload override of `QUEUE_DRIVER` — see "Routing different workloads to different brokers" below |
 | `MQTT_BROKER_URL` | The `modules/iot` MQTT demo (e.g. `tcp://mosquitto:1883` via `make docker-mqtt`) — unrelated to `QUEUE_DRIVER` |
+
+`GET /metrics` (Prometheus) needs no env var — it's always on, like
+`/health`. `make docker-monitoring` starts Prometheus + Grafana to scrape
+and visualize it.
 
 ---
 
@@ -781,6 +794,37 @@ on the Realtime page within milliseconds.
 
 ---
 
+### 9c. Monitoring (Prometheus / Grafana)
+
+`pkg/metrics` wraps `prometheus/client_golang` on the default registry, so a
+single `GET /metrics` (always on, unauthenticated, same tier as `/health`)
+exposes:
+
+- **HTTP metrics** — `http_requests_total`/`http_request_duration_seconds`
+  by method, route pattern, and status, recorded by `metrics.GinMiddleware()`
+  for every request except `/metrics` itself.
+- **MongoDB metrics + logs** — `mongodb_operations_total`/
+  `mongodb_operation_duration_seconds` by operation and collection, plus a
+  zap log line per command, recorded by `metrics.MongoCommandMonitor(log)` (a
+  `*event.CommandMonitor` wired into `apps/api/main.go` via
+  `database.NewMongoDBWithMonitor`). High-frequency driver handshake/
+  keepalive commands (`hello`, `ismaster`, `ping`, ...) are filtered out so
+  they don't inflate cardinality or log volume.
+- **Go runtime/process metrics** — goroutines, heap, CPU — registered
+  automatically alongside the two families above.
+
+```bash
+make docker-monitoring   # Prometheus (scrapes app:3000/metrics) + Grafana, "monitoring" Compose profile
+```
+
+Grafana (`http://localhost:3001`, `admin`/`admin` — `:3000` is already the
+API's port) auto-provisions the Prometheus datasource and a **Bread API
+Overview** dashboard (HTTP rate/latency/errors, MongoDB rate/latency/errors,
+Go runtime) from `monitoring/grafana/provisioning/` — no manual setup.
+Prometheus UI: `http://localhost:9090`.
+
+---
+
 ### 10. Web Test Client
 
 `web/` is a React + TypeScript SPA (Vite, Tailwind, React Router) that
@@ -911,4 +955,5 @@ GET    /v1/admin/analytics/...                 Admin  (all analytics routes)
 GET    /health                                 public
 GET    /health/live                            public
 GET    /health/ready                           public
+GET    /metrics                                public  (Prometheus scrape)
 ```

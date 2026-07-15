@@ -8,6 +8,7 @@ import (
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/dbid"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/event"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
@@ -21,7 +22,17 @@ type MongoDB struct {
 // NewMongoDB connects with the correct BSON codec for the configured ID strategy
 // (uuid or objectid) and retries until the replica-set primary is available.
 func NewMongoDB(cfg config.MongoConfig) (*MongoDB, error) {
-	opts := options.MergeClientOptions(
+	return NewMongoDBWithMonitor(cfg, nil)
+}
+
+// NewMongoDBWithMonitor is NewMongoDB plus an optional *event.CommandMonitor
+// (see pkg/metrics.MongoCommandMonitor) for per-command logging/metrics. A
+// nil monitor behaves exactly like NewMongoDB — only long-running processes
+// that want Prometheus/zap visibility into MongoDB traffic (apps/api) need
+// this; one-shot scripts (scripts/seed, scripts/migrate) can keep calling
+// NewMongoDB.
+func NewMongoDBWithMonitor(cfg config.MongoConfig, monitor *event.CommandMonitor) (*MongoDB, error) {
+	clientOpts := []*options.ClientOptions{
 		options.Client().ApplyURI(cfg.URI),
 		// Register the correct _id codec based on DB_ID_TYPE config
 		options.Client().SetRegistry(dbid.NewRegistry(cfg.IDType)),
@@ -30,7 +41,11 @@ func NewMongoDB(cfg config.MongoConfig) (*MongoDB, error) {
 			SetMaxPoolSize(cfg.PoolMax).
 			SetConnectTimeout(cfg.Timeout).
 			SetServerSelectionTimeout(cfg.Timeout),
-	)
+	}
+	if monitor != nil {
+		clientOpts = append(clientOpts, options.Client().SetMonitor(monitor))
+	}
+	opts := options.MergeClientOptions(clientOpts...)
 
 	client, err := mongo.Connect(context.Background(), opts)
 	if err != nil {

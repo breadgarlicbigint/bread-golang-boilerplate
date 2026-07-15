@@ -13,6 +13,7 @@ import (
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/database"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/logger"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -45,7 +46,10 @@ func main() {
 	}
 	defer log.Sync() //nolint:errcheck
 
-	mongo, err := database.NewMongoDB(cfg.Mongo)
+	// CommandMonitor drives both the mongodb_operations_total/
+	// mongodb_operation_duration_seconds Prometheus metrics and per-command
+	// zap logs — see pkg/metrics.MongoCommandMonitor.
+	mongo, err := database.NewMongoDBWithMonitor(cfg.Mongo, metrics.MongoCommandMonitor(log))
 	if err != nil {
 		log.Fatal("mongo connect", zap.Error(err))
 	}

@@ -1,0 +1,12 @@
+# Local-dev Prometheus config — scrapes the API's /metrics endpoint over the
+# Docker network. See `make docker-monitoring` and CLAUDE.md's "Monitoring
+# (Prometheus / Grafana)" section.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: bread-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["app:3000"]

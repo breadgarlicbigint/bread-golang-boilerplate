@@ -4,7 +4,7 @@
         run-worker run-worker-rabbitmq run-worker-kafka \
         dev-worker dev-worker-rabbitmq dev-worker-kafka \
         docker-up docker-down docker-logs docker-rebuild \
-        docker-worker docker-rabbitmq docker-kafka docker-queues docker-mqtt \
+        docker-worker docker-rabbitmq docker-kafka docker-queues docker-mqtt docker-monitoring \
         migrate-indexes migrate-indexes-local seed seed-local generate-keys swagger generate \
         build-emails web-install web-dev setup clean help
 
@@ -200,8 +200,14 @@ docker-mqtt: mod-sync
 	docker compose --profile mqtt up -d --build
 	@echo "  ✅  MQTT broker → localhost:1883"
 
+docker-monitoring: mod-sync
+	@echo "▶ Starting full stack + Prometheus + Grafana"
+	docker compose --profile monitoring up -d --build
+	@echo "  ✅  Prometheus → http://localhost:9090"
+	@echo "  ✅  Grafana    → http://localhost:3001 (admin/admin) — 'Bread API Overview' dashboard is pre-provisioned"
+
 docker-down:
-	docker compose --profile worker --profile rabbitmq --profile kafka --profile mqtt down
+	docker compose --profile worker --profile rabbitmq --profile kafka --profile mqtt --profile monitoring down
 
 docker-stop:
 	docker compose stop
@@ -216,7 +222,7 @@ docker-rebuild:
 	docker compose up -d --build --force-recreate app
 
 docker-clean:
-	docker compose --profile worker --profile rabbitmq --profile kafka down -v --remove-orphans
+	docker compose --profile worker --profile rabbitmq --profile kafka --profile mqtt --profile monitoring down -v --remove-orphans
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # ── Database (Docker-aware) ───────────────────────────────────────────────────
@@ -386,6 +392,7 @@ help:
 	@echo "    make docker-kafka    Start full stack + Kafka broker + worker"
 	@echo "    make docker-queues   Start full stack + ALL THREE workers (for split transactional/promotional routing)"
 	@echo "    make docker-mqtt     Start full stack + Mosquitto MQTT broker (modules/iot demo)"
+	@echo "    make docker-monitoring Start full stack + Prometheus + Grafana"
 	@echo "    make docker-down     Stop and remove all containers"
 	@echo "    make docker-logs     Tail app logs"
 	@echo "    make docker-rebuild  Rebuild and restart only the app container"

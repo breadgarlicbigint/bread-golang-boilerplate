@@ -43,6 +43,7 @@ make docker-worker       # docker-up + Redis/Asynq worker (profile: worker)
 make docker-rabbitmq     # docker-up + RabbitMQ broker + worker (profile: rabbitmq)
 make docker-kafka        # docker-up + Kafka broker + worker (profile: kafka)
 make docker-mqtt         # docker-up + Mosquitto MQTT broker (modules/iot demo, profile: mqtt)
+make docker-monitoring   # docker-up + Prometheus + Grafana (profile: monitoring)
 make help               # full target list
 ```
 
@@ -75,6 +76,7 @@ make help               # full target list
 | i18n | Custom `pkg/i18n` — reads `locales/*.json`, `x-custom-lang` header |
 | Error tracking | `getsentry/sentry-go` |
 | Rate limiting | Redis sliding-window in `shared/middleware/ratelimit.go` |
+| Metrics | `prometheus/client_golang` (`pkg/metrics`) — HTTP + MongoDB + Go runtime metrics, scraped by Prometheus, visualized in Grafana — see "Monitoring (Prometheus / Grafana)" |
 
 ---
 
@@ -132,6 +134,8 @@ pkg/                            ← Pure utilities (zero domain knowledge)
   i18n/                         ← Locale loader + Translator + Gin middleware
   jwt/                          ← ES256/ES512 key manager
   logger/                       ← Zap factory
+  metrics/                      ← Prometheus registry: HTTP Gin middleware,
+                                   MongoDB CommandMonitor, /metrics handler
   mqtt/                         ← paho MQTT client wrapper (modules/iot)
   realtime/                     ← WebSocket/SSE fan-out Hub (modules/realtime)
   sms/                          ← Twilio SMS + WhatsApp sender
@@ -146,6 +150,9 @@ pkg/                            ← Pure utilities (zero domain knowledge)
 
 locales/                        ← en.json, id.json (i18n strings incl. email tokens)
 email-templates/                ← React Email .tsx source (build-time, Node.js only)
+monitoring/                     ← Prometheus scrape config + Grafana provisioning
+                                   (datasource + dashboard) — see "Monitoring
+                                   (Prometheus / Grafana)" below
 web/                             ← React + TS test client — see "Web Test Client" below
 scripts/seed/ scripts/migrate/  ← One-shot DB seed and index creation
 docs/                           ← Architecture docs, id-migration, email-i18n, swagger
@@ -789,6 +796,80 @@ sees it arrive live. Connect the **Realtime** page (WS or SSE, topic
 
 ---
 
+## Monitoring (Prometheus / Grafana)
+
+`pkg/metrics` wraps `prometheus/client_golang` and registers on the default
+Prometheus registry — so `GET /metrics` (always on, unauthenticated, same
+tier as `/health`) exposes three things in one scrape:
+
+1. **HTTP request metrics** — `http_requests_total{method,path,status}` and
+   `http_request_duration_seconds{method,path,status}` (histogram), recorded
+   by `metrics.GinMiddleware()` (wired into `apps/api/app/app.go`'s global
+   `engine.Use(...)` chain) for every request except `/metrics` itself
+   (excluded so scrapes don't inflate their own series). `path` is Gin's
+   route pattern (`c.FullPath()`, e.g. `/v1/users/:id`), not the raw URL, so
+   cardinality stays bounded; unmatched routes (404s with no registered
+   handler) label as `path="unmatched"`.
+2. **MongoDB command metrics + logs** — `mongodb_operations_total{operation,
+   collection,status}` and `mongodb_operation_duration_seconds{operation,
+   collection}` (histogram), plus a zap `Debug`/`Warn` log line per command,
+   recorded by `metrics.MongoCommandMonitor(log)`, an
+   `*event.CommandMonitor` passed to `database.NewMongoDBWithMonitor` (only
+   `apps/api/main.go` opts in — `database.NewMongoDB` still exists unchanged
+   and is what `scripts/seed`, `scripts/migrate`, and the worker `main.go`s
+   keep calling, since one-shot scripts and workers weren't in scope for
+   this pass). High-frequency driver handshake/keepalive commands (`hello`,
+   `ismaster`, `ping`, `saslStart`, `saslContinue`, `endSessions`,
+   `buildInfo`, `getLastError`) are filtered out in `Started` before they're
+   ever tracked, so they inflate neither the logs nor the metric
+   cardinality. The collection name is only present on the `Started` event's
+   raw command document (e.g. `{"find": "users", ...}` — the collection is
+   the value keyed by the command name itself); it's captured there and
+   correlated back to the matching `Succeeded`/`Failed` event by
+   `RequestID` in an internal mutex-guarded map.
+3. **Go runtime / process metrics** — `go_goroutines`,
+   `go_memstats_heap_inuse_bytes`, `process_cpu_seconds_total`, etc. —
+   registered automatically by `promauto` alongside the two metric families
+   above; no separate wiring needed.
+
+`metrics.Handler()` (`gin.WrapH(promhttp.Handler())`) is what `GET /metrics`
+actually serves — registered on the `root` group next to `/health` in
+`apps/api/app/app.go`, so it goes through the same middleware stack
+(RequestID/Recovery/Logger/gzip/CORS/RateLimiter/etc.) as every other route,
+same as `/health`.
+
+- **Prometheus + Grafana stack:** `make docker-monitoring` starts Prometheus
+  (`monitoring/prometheus.yml` — scrapes `app:3000/metrics` every 15s) and
+  Grafana (`monitoring/grafana/provisioning/` — auto-provisions the
+  Prometheus datasource and the **Bread API Overview** dashboard from
+  `monitoring/grafana/dashboards/bread-api-overview.json`, no manual
+  "Add data source"/"Import dashboard" click needed) on the `monitoring`
+  Compose profile, independent of and combinable with every other profile
+  (`worker`/`rabbitmq`/`kafka`/`mqtt`) — same pattern as `docker-mqtt`.
+  Prometheus UI → `http://localhost:9090`; Grafana → `http://localhost:3001`
+  (`admin`/`admin` — Grafana's own default port 3000 is already the API's,
+  so the host mapping is `3001:3000`).
+- **No config required:** unlike Firebase/MQTT/etc., there's no
+  `*_ENABLED`/`*_URL` env var gating this — `/metrics` is always exposed
+  (matching `/health`'s always-on convention), so `make docker-monitoring`
+  works out of the box against a running `app` container with zero `.env`
+  changes.
+- **Dashboard panels:** HTTP request rate by status, HTTP p95 latency by
+  route, HTTP error rate (4xx/5xx), MongoDB operation rate by operation,
+  MongoDB p95 latency by operation, MongoDB error rate by
+  operation+collection, Go goroutines, Go heap in use, process CPU — see
+  `monitoring/grafana/dashboards/bread-api-overview.json` for the exact
+  PromQL behind each panel.
+- Not unit-tested via real Prometheus scrape/Grafana render (out of scope
+  for unit tests, same reasoning as every other real-infra boundary in this
+  project) — `pkg/metrics/metrics_test.go` exercises `GinMiddleware` via
+  `httptest`/`gin.CreateTestContext`-style requests and
+  `MongoCommandMonitor`'s `Started`/`Succeeded`/`Failed` callbacks directly
+  with hand-built `event.Command*Event` structs, asserting via
+  `prometheus/client_golang/prometheus/testutil`.
+
+---
+
 ## Multi-language (i18n)
 
 Locale files: `locales/en.json` (default), `locales/id.json`
@@ -1052,6 +1133,7 @@ modules/appversion/service/appversion_test.go
 pkg/realtime/hub_test.go                    # fake in-memory Client, no network
 modules/realtime/service/realtime.service_test.go
 modules/iot/service/iot.service_test.go     # fake MQTT Publisher, no real broker
+pkg/metrics/metrics_test.go                 # httptest requests + hand-built event.Command*Event structs
 ```
 
 Use fake/stub implementations, never real MongoDB/Redis in unit tests. The
@@ -1116,6 +1198,10 @@ KAFKA_BROKERS=kafka:9092                          # used when QUEUE_DRIVER=kafka
 # MQTT (modules/iot demo) — unrelated to QUEUE_DRIVER above. Blank (default)
 # disables modules/iot entirely (every call returns 503).
 MQTT_BROKER_URL=               # e.g. tcp://mosquitto:1883 — set to use `make docker-mqtt`
+
+# Monitoring — no env var needed. GET /metrics is always exposed (pkg/metrics,
+# same tier as /health); `make docker-monitoring` starts Prometheus + Grafana
+# to scrape/visualize it.
 ```
 
 In Docker, `MONGO_URI` and `REDIS_HOST` are always overridden by
@@ -1206,7 +1292,8 @@ make docker-worker      # same + Redis/Asynq background worker (profile: worker)
 make docker-rabbitmq    # same + RabbitMQ broker + RabbitMQ worker (profile: rabbitmq)
 make docker-kafka       # same + Kafka broker + Kafka worker (profile: kafka)
 make docker-mqtt        # same + Mosquitto MQTT broker (profile: mqtt, modules/iot demo)
-make docker-down        # stop all (all four profiles above)
+make docker-monitoring  # same + Prometheus + Grafana (profile: monitoring)
+make docker-down        # stop all (all five profiles above)
 make docker-rebuild     # rebuild + restart app container only
 make docker-clean       # remove containers AND volumes (destructive)
 make seed               # seed DB (runs inside Docker network, requires docker-up)
@@ -1219,9 +1306,11 @@ choices of **one** queue backend, not additive — each is a separate Compose
 profile (`worker` / `rabbitmq` / `kafka`) that starts its own broker (where
 applicable) and matching worker container. Set `QUEUE_DRIVER` in `.env` to
 match whichever one you start. See "Background Job Queue Backends" above.
-`docker-mqtt` (profile `mqtt`) is independent of all three — it's the
-`modules/iot` demo's own broker, not a `QUEUE_DRIVER` choice; combine it
-with any of the above.
+`docker-mqtt` (profile `mqtt`) and `docker-monitoring` (profile `monitoring`)
+are each independent of all three — `docker-mqtt` is the `modules/iot`
+demo's own broker, not a `QUEUE_DRIVER` choice; `docker-monitoring` is
+Prometheus + Grafana scraping the always-on `/metrics` endpoint. Both combine
+freely with any of the above and with each other.
 
 The `email-builder` Docker stage compiles React Email templates before the
 Go build stage runs, so the embedded HTML is always fresh in Docker builds.
@@ -1285,6 +1374,10 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `POST /v1/admin/iot/devices/:id/simulate` or `/command` returns 503 | `MQTT_BROKER_URL` is unset or the broker dial failed at startup (check the API log for "MQTT connect failed") — set it and run `make docker-mqtt`, then restart the API |
 | Simulated telemetry never shows up on the Realtime page | The WS/SSE client must be subscribed to topic `iot:telemetry` specifically — the private per-user channel doesn't receive it. Also confirm `MQTT_BROKER_URL` is actually configured, not just that `/simulate` returned 200 (publish succeeding doesn't guarantee a subscriber is running if `IoTService.Start()` failed — check the log) |
 | Adding a `pkg/mqtt`/`pkg/realtime` capability directly in a `modules/*/service` file | Depend on a small local interface (`Publisher`, `RealtimePublisher`, ...) satisfied structurally by the concrete type — same pattern as `EmailQueue` — never import `paho.mqtt.golang` or `gorilla/websocket` outside `pkg/mqtt`/`pkg/realtime` and the `modules/realtime` handler |
+| `GET /metrics` returns an empty/near-empty scrape | Metrics are recorded on demand — `http_requests_total`/`mongodb_operations_total` label combinations only appear after at least one matching request/command has happened; hit a route (or run `make seed`) first, then re-scrape. Go runtime metrics (`go_goroutines`, etc.) are always present regardless |
+| Calling `database.NewMongoDB` instead of `NewMongoDBWithMonitor` and expecting MongoDB metrics/logs | Only `apps/api/main.go` passes `metrics.MongoCommandMonitor(log)` in — `scripts/seed`, `scripts/migrate`, and the three worker `main.go`s still call plain `NewMongoDB` (nil monitor), by design, since one-shot scripts and workers aren't scraped |
+| Grafana shows "No data" right after `make docker-monitoring` | Prometheus's first scrape can take up to `scrape_interval` (15s in `monitoring/prometheus.yml`) to land, and every panel needs at least one matching HTTP request or MongoDB command to have happened on the `app` container in that window — hit a few routes, then wait/refresh |
+| Grafana UI won't load at `http://localhost:3000` | That's the API's port — Grafana is mapped to `3001:3000` in `docker-compose.yml` specifically to avoid the collision; use `http://localhost:3001` |
 
 ---
 
@@ -1314,6 +1407,9 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `shared/middleware/auth.go` (`AuthJWTAccessWS`) | JWT middleware variant accepting `?token=` — used only by the two realtime routes above |
 | `pkg/mqtt/client.go` | Thin `paho.mqtt.golang` wrapper — `Connect`/`Publish`/`Subscribe`/`Close` |
 | `modules/iot/service/iot.service.go` | `SimulateTelemetry`/`SendCommand` (publish side) + `Start`/`handleTelemetry` (subscribe side, persists + forwards to `modules/realtime`) |
+| `pkg/metrics/metrics.go` | `GinMiddleware()` (HTTP metrics), `MongoCommandMonitor(log)` (MongoDB metrics + zap logs), `Handler()` (`/metrics` scrape endpoint) |
+| `monitoring/prometheus.yml` | Prometheus scrape config — targets `app:3000/metrics` |
+| `monitoring/grafana/dashboards/bread-api-overview.json` | The pre-provisioned Grafana dashboard — edit panels/PromQL here |
 | `modules/activity/service/activity.service.go` | Action constants + log helpers |
 | `modules/<name>/contract.go` | Public interface — the only safe cross-module import |
 | `pkg/dbid/dbid.go` | ID strategy helpers (uuid / objectid) — see `docs/id-migration.md` |

@@ -96,6 +96,9 @@ Mapping of every feature in `andrechristikan/ack-nestjs-boilerplate` to this Go 
 | Bidirectional Activity Logging | ❌ | ✅ | `DirectionInbound` / `DirectionOutbound` |
 | Health Checks | ✅ | ✅ | `/health`, `/health/live`, `/health/ready` |
 | Multi-language (i18n) | ✅ | ✅ | `pkg/i18n/`, `x-custom-lang` header |
+| Prometheus Metrics | ❌ | ✅ | `pkg/metrics/metrics.go`, `GET /metrics` |
+| MongoDB Command Logging | ❌ | ✅ | `pkg/metrics.MongoCommandMonitor` (zap + Prometheus) |
+| Grafana Dashboards | ❌ | ✅ | `monitoring/grafana/dashboards/bread-api-overview.json` |
 
 ---
 
@@ -133,6 +136,7 @@ Mapping of every feature in `andrechristikan/ack-nestjs-boilerplate` to this Go 
 | Anomaly Detection | Credential stuffing, device proliferation |
 | Realtime WebSocket / SSE | `realtime/` module, `pkg/realtime` — private per-user channel + generic pub/sub |
 | MQTT IoT Demo | `iot/` module, `pkg/mqtt` — publish/subscribe round trip, forwards to realtime pub/sub |
+| Prometheus + Grafana Monitoring | `pkg/metrics` — HTTP + MongoDB + Go runtime metrics; `monitoring/` — Prometheus scrape config + provisioned Grafana dashboard |
 
 ---
 
@@ -166,6 +170,7 @@ Mapping of every feature in `andrechristikan/ack-nestjs-boilerplate` to this Go 
 GET    /health
 GET    /health/live
 GET    /health/ready
+GET    /metrics                             (Prometheus scrape — HTTP + MongoDB + Go runtime)
 GET    /docs/*any                           (non-production only)
 
 POST   /v1/auth/login
