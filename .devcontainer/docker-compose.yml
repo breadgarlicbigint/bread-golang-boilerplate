@@ -193,6 +193,42 @@ services:
     networks:
       - devnet
 
+  # ── Prometheus + Grafana (always on in the dev container, unlike the root
+  # docker-compose.yml's opt-in `monitoring` profile — same rationale as
+  # RabbitMQ/Kafka above always running here for convenience). Scrapes the
+  # API directly on the `devcontainer` service (make dev), not a container
+  # named `app` — see monitoring/prometheus.devcontainer.yml.
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: bread-dev-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090" # Prometheus UI → http://localhost:9090
+    volumes:
+      - ../monitoring/prometheus.devcontainer.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - devnet
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: bread-dev-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000" # Grafana UI → http://localhost:3001 (admin/admin) — :3000 is already the API's
+    environment:
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - devnet
+
 volumes:
   mongo1-data:
   mongo2-data:
@@ -200,6 +236,8 @@ volumes:
   redis-data:
   rabbitmq-data:
   kafka-data:
+  prometheus-data:
+  grafana-data:
   go-mod-cache:
   go-build-cache:
   npm-cache:

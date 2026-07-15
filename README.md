@@ -874,11 +874,17 @@ See [web/README.md](web/README.md) for the full breakdown.
 ### 11. Dev Container (VS Code / GitHub Codespaces)
 
 `.devcontainer/` ships a fully configured environment — Go 1.23, Node 20,
-`air`, `golangci-lint`, `goimports`, `mongosh`, Docker CLI — with MongoDB rs0
-and Redis started automatically. `post-create.sh` generates JWT keys,
-patches `.env` with in-network service URIs, builds the React Email
-templates, generates Swagger docs, and runs `go mod tidy` on first open.
-Works identically in GitHub Codespaces. VS Code Tasks and an F5 debug
+`air`, `golangci-lint`, `goimports`, `mongosh`, Docker CLI — with MongoDB rs0,
+Redis, RabbitMQ, Kafka, **and Prometheus + Grafana** started automatically
+(unlike the root `docker-compose.yml`, where Prometheus/Grafana are behind
+the opt-in `monitoring` profile). Prometheus (`localhost:9090`) scrapes the
+API directly on the `devcontainer` service — run `make dev` and its
+`/metrics` is visible within one scrape interval — and Grafana
+(`localhost:3001`, `admin`/`admin`) comes with the same pre-provisioned
+**Bread API Overview** dashboard described above. `post-create.sh` generates
+JWT keys, patches `.env` with in-network service URIs, builds the React
+Email templates, generates Swagger docs, and runs `go mod tidy` on first
+open. Works identically in GitHub Codespaces. VS Code Tasks and an F5 debug
 launch config are included for the API server.
 
 ---

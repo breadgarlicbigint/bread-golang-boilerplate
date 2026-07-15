@@ -9,7 +9,7 @@
     "source=${localEnv:HOME}/.claude.json,target=/root/.claude.json,type=bind"
   ],
   // ── Forwarded ports ────────────────────────────────────────────────────────
-  "forwardPorts": [3000, 5173, 6379, 27017, 5672, 15672, 9094],
+  "forwardPorts": [3000, 5173, 6379, 27017, 5672, 15672, 9094, 9090, 3001],
   "portsAttributes": {
     "3000": { "label": "API Server", "onAutoForward": "notify" },
     "5173": { "label": "Web Test Client", "onAutoForward": "notify" },
@@ -17,7 +17,9 @@
     "6379": { "label": "Redis", "onAutoForward": "silent" },
     "5672": { "label": "RabbitMQ (AMQP)", "onAutoForward": "silent" },
     "15672": { "label": "RabbitMQ UI", "onAutoForward": "notify" },
-    "9094": { "label": "Kafka", "onAutoForward": "silent" }
+    "9094": { "label": "Kafka", "onAutoForward": "silent" },
+    "9090": { "label": "Prometheus UI", "onAutoForward": "notify" },
+    "3001": { "label": "Grafana UI", "onAutoForward": "notify" }
   },
 
   // ── Lifecycle scripts ──────────────────────────────────────────────────────

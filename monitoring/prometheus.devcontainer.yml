@@ -1,0 +1,15 @@
+# Dev Container variant of monitoring/prometheus.yml. The root
+# docker-compose.yml runs the API as its own `app` container, but inside the
+# dev container the API runs via `make dev` directly in the `devcontainer`
+# service — so the scrape target is `devcontainer:3000`, not `app:3000`.
+# job_name must stay "bread-api" to match the job="bread-api" filters baked
+# into monitoring/grafana/dashboards/bread-api-overview.json.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: bread-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["devcontainer:3000"]

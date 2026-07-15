@@ -246,7 +246,15 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 		middleware.Logger(log),
 		metrics.GinMiddleware(),
 		secHeaders,
-		gzip.Gzip(gzip.DefaultCompression),
+		// /metrics is excluded: promhttp.Handler() already gzips its own
+		// response when the client sends Accept-Encoding: gzip (Prometheus
+		// always does). Without this exclusion, this middleware gzips that
+		// already-gzipped body a second time; Prometheus only strips one
+		// Content-Encoding: gzip layer, so it's left decoding the inner
+		// layer's raw gzip magic byte as if it were plaintext and every
+		// scrape fails ("expected a valid start token, got \x1f"). Verified
+		// against Prometheus v2.55.1.
+		gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/metrics"})),
 		cors.New(cors.Config{
 			AllowOrigins: []string{"*"},
 			AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},

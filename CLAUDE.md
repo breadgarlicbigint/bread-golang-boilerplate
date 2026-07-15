@@ -836,7 +836,16 @@ tier as `/health`) exposes three things in one scrape:
 actually serves — registered on the `root` group next to `/health` in
 `apps/api/app/app.go`, so it goes through the same middleware stack
 (RequestID/Recovery/Logger/gzip/CORS/RateLimiter/etc.) as every other route,
-same as `/health`.
+same as `/health` — with one deliberate exception: `/metrics` is passed to
+`gzip.WithExcludedPaths` so the global gzip middleware skips it.
+`promhttp.Handler()` already gzips its own response whenever
+`Accept-Encoding: gzip` is present (which Prometheus's scraper always sends),
+so without the exclusion the gzip middleware would compress that
+already-gzipped body a second time; Prometheus strips only one
+`Content-Encoding: gzip` layer, so it would try to parse the inner layer's
+raw gzip bytes as plaintext and fail every scrape (verified live against
+Prometheus v2.55.1: `"expected a valid start token, got \"\x1f\""` — 0x1f is
+the gzip magic byte).
 
 - **Prometheus + Grafana stack:** `make docker-monitoring` starts Prometheus
   (`monitoring/prometheus.yml` — scrapes `app:3000/metrics` every 15s) and
@@ -1243,8 +1252,22 @@ The project ships a fully configured dev container. Open in VS Code with the
 |---|---|---|
 | MongoDB rs0 | `mongo1:27017` | Primary database |
 | Redis | `redis:6379` | Cache + sessions |
+| Prometheus | `localhost:9090` | Scrapes the API's `/metrics` (target: `devcontainer:3000`, not `app:3000` — see below) |
+| Grafana | `localhost:3001` (`admin`/`admin`) | Pre-provisioned "Bread API Overview" dashboard |
 | (API) | `localhost:3000` | Started manually via `make dev` |
 | (Web test client) | `localhost:5173` | Started manually via `make web-dev` |
+
+Unlike the root `docker-compose.yml`'s opt-in `monitoring` Compose profile
+(`make docker-monitoring`), Prometheus and Grafana run unconditionally in
+the dev container — same convenience rationale as RabbitMQ/Kafka always
+running here too. `.devcontainer/docker-compose.yml`'s `prometheus` service
+mounts `monitoring/prometheus.devcontainer.yml`, a separate scrape config
+from the root's `monitoring/prometheus.yml` — the dev container runs the API
+via `make dev` directly inside the `devcontainer` service (no separate `app`
+container exists there), so the scrape target is `devcontainer:3000`
+instead of `app:3000`. Both configs keep `job_name: bread-api` so the same
+provisioned Grafana dashboard (which filters some panels by `job="bread-api"`)
+works unmodified in both environments.
 
 ### First-time open
 
@@ -1378,6 +1401,7 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | Calling `database.NewMongoDB` instead of `NewMongoDBWithMonitor` and expecting MongoDB metrics/logs | Only `apps/api/main.go` passes `metrics.MongoCommandMonitor(log)` in — `scripts/seed`, `scripts/migrate`, and the three worker `main.go`s still call plain `NewMongoDB` (nil monitor), by design, since one-shot scripts and workers aren't scraped |
 | Grafana shows "No data" right after `make docker-monitoring` | Prometheus's first scrape can take up to `scrape_interval` (15s in `monitoring/prometheus.yml`) to land, and every panel needs at least one matching HTTP request or MongoDB command to have happened on the `app` container in that window — hit a few routes, then wait/refresh |
 | Grafana UI won't load at `http://localhost:3000` | That's the API's port — Grafana is mapped to `3001:3000` in `docker-compose.yml` specifically to avoid the collision; use `http://localhost:3001` |
+| Prometheus scrape of `/metrics` fails with `"expected a valid start token, got \"\x1f\""` | Would happen if `/metrics` were ever removed from `gzip.WithExcludedPaths` in `apps/api/app/app.go` — `promhttp.Handler()` already gzips its own response when `Accept-Encoding: gzip` is present (Prometheus always sends it), so the global gzip middleware would double-compress it; Prometheus only strips one `Content-Encoding: gzip` layer and chokes on the inner layer's raw gzip magic byte. Keep `/metrics` excluded |
 
 ---
 
