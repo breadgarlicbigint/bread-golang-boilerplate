@@ -207,6 +207,31 @@ services:
     profiles:
       - kafka
 
+  # ── MQTT broker for the modules/iot device-telemetry demo (profile: mqtt) ──────
+  # Unrelated to the QUEUE_DRIVER task-queue backends above — this is a
+  # separate demo broker the API itself connects to (see MQTT_BROKER_URL),
+  # not a worker/profile pairing. No dedicated worker process; the API
+  # process both publishes (simulate/command) and subscribes (telemetry).
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: bread-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"    # MQTT
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - bread-net
+    profiles:
+      - mqtt
+
   # ── Background worker — Redis / Asynq (profile: worker) ────────────────────────
   worker:
     build:
@@ -297,6 +322,7 @@ volumes:
   redis-data:
   rabbitmq-data:
   kafka-data:
+  mosquitto-data:
 
 networks:
   bread-net:

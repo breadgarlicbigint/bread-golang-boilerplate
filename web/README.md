@@ -2,10 +2,19 @@
 
 A React + TypeScript SPA that exercises every HTTP-exposed feature of the Go
 API (`apps/api`) — auth, 2FA, passkeys/WebAuthn, mobile OTP, notifications,
-admin user management, app versioning, admin analytics, and admin
-notifications (test email / send / broadcast — the page for exercising
-transactional-vs-promotional queue routing) — plus a generic API console and
-client-side activity log for anything not covered by a dedicated page.
+admin user management, app versioning, admin analytics, admin notifications
+(test email / send / broadcast — the page for exercising
+transactional-vs-promotional queue routing), realtime WebSocket/SSE, and an
+MQTT IoT device-telemetry demo — plus a generic API console and client-side
+activity log for anything not covered by a dedicated page.
+
+**Realtime** (`/realtime`) connects `GET /v1/me/ws` and `GET /v1/me/events`
+with live event logs and a topic join/leave control; **Admin → IoT**
+(`/admin/iot`) simulates MQTT device telemetry and lists persisted readings
+— open both to watch a simulated reading round-trip through the broker and
+arrive live. See the root `CLAUDE.md`'s "Realtime (WebSocket / SSE /
+Pub-Sub)" and "IoT (MQTT Device Telemetry Demo)" sections for the backend
+architecture.
 
 ## Running
 

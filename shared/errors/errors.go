@@ -83,4 +83,7 @@ var (
 	// Notification
 	ErrMailerNotConfigured = NewI18n(http.StatusServiceUnavailable, "MAILER_NOT_CONFIGURED", "notification.mailerNotConfigured", "Email delivery is not configured")
 	ErrEmailNotAvailable   = NewI18n(http.StatusBadRequest, "EMAIL_NOT_AVAILABLE", "notification.emailNotAvailable", "Recipient email address is required in data.email for the email channel")
+
+	// IoT
+	ErrMQTTNotConfigured = NewI18n(http.StatusServiceUnavailable, "MQTT_NOT_CONFIGURED", "iot.mqttNotConfigured", "MQTT broker is not configured")
 )

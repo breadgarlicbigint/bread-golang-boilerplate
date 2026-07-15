@@ -131,6 +131,8 @@ Mapping of every feature in `andrechristikan/ack-nestjs-boilerplate` to this Go 
 | Analytics Dashboard | `analytics/` module (13 endpoints) |
 | Fraud Scoring | `analytics/service` → `FraudSignalSummary()` |
 | Anomaly Detection | Credential stuffing, device proliferation |
+| Realtime WebSocket / SSE | `realtime/` module, `pkg/realtime` — private per-user channel + generic pub/sub |
+| MQTT IoT Demo | `iot/` module, `pkg/mqtt` — publish/subscribe round trip, forwards to realtime pub/sub |
 
 ---
 
@@ -209,6 +211,8 @@ GET    /v1/me/notifications/preferences
 PATCH  /v1/me/notifications/preferences
 POST   /v1/me/notifications/devices
 DELETE /v1/me/notifications/devices/:token
+GET    /v1/me/ws                            (WebSocket — token via ?token=)
+GET    /v1/me/events                        (SSE — token via ?token=)
 
 ── Admin (Bearer + admin role) ─────────────────────────────────────────────────
 POST   /v1/users
@@ -224,6 +228,13 @@ PUT    /v1/admin/app-versions/:platform
 
 POST   /v1/admin/notifications/send
 POST   /v1/admin/notifications/broadcast
+
+POST   /v1/admin/realtime/publish
+GET    /v1/admin/realtime/stats
+
+POST   /v1/admin/iot/devices/:deviceId/simulate
+POST   /v1/admin/iot/devices/:deviceId/command
+GET    /v1/admin/iot/telemetry
 
 GET    /v1/admin/analytics/users/registrations
 GET    /v1/admin/analytics/users/churn

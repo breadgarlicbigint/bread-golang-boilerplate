@@ -4,7 +4,7 @@
         run-worker run-worker-rabbitmq run-worker-kafka \
         dev-worker dev-worker-rabbitmq dev-worker-kafka \
         docker-up docker-down docker-logs docker-rebuild \
-        docker-worker docker-rabbitmq docker-kafka docker-queues \
+        docker-worker docker-rabbitmq docker-kafka docker-queues docker-mqtt \
         migrate-indexes migrate-indexes-local seed seed-local generate-keys swagger generate \
         build-emails web-install web-dev setup clean help
 
@@ -194,8 +194,14 @@ docker-queues: mod-sync
 	@echo "  ✅  RabbitMQ UI → http://localhost:15672 (guest/guest)"
 	@echo "  ✅  Kafka broker → localhost:9094 (host) / kafka:9092 (in-network)"
 
+docker-mqtt: mod-sync
+	@echo "▶ Starting full stack + Mosquitto MQTT broker (modules/iot demo)"
+	@echo "  Set MQTT_BROKER_URL=tcp://mosquitto:1883 in .env first, or the API won't connect to it."
+	docker compose --profile mqtt up -d --build
+	@echo "  ✅  MQTT broker → localhost:1883"
+
 docker-down:
-	docker compose --profile worker --profile rabbitmq --profile kafka down
+	docker compose --profile worker --profile rabbitmq --profile kafka --profile mqtt down
 
 docker-stop:
 	docker compose stop
@@ -379,6 +385,7 @@ help:
 	@echo "    make docker-rabbitmq Start full stack + RabbitMQ broker + worker"
 	@echo "    make docker-kafka    Start full stack + Kafka broker + worker"
 	@echo "    make docker-queues   Start full stack + ALL THREE workers (for split transactional/promotional routing)"
+	@echo "    make docker-mqtt     Start full stack + Mosquitto MQTT broker (modules/iot demo)"
 	@echo "    make docker-down     Stop and remove all containers"
 	@echo "    make docker-logs     Tail app logs"
 	@echo "    make docker-rebuild  Rebuild and restart only the app container"

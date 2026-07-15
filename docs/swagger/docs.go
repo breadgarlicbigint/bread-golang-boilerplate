@@ -99,6 +99,170 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/admin/iot/devices/{deviceId}/command": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Publishes to MQTT topic devices/:deviceId/commands. Fire-and-forget — nothing in this boilerplate subscribes to it (a real device would); this exists to demonstrate publishing in the other direction.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "iot"
+                ],
+                "summary": "Publish a command to a device over MQTT",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Device ID",
+                        "name": "deviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Command + optional data",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.CommandRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.CommandResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    },
+                    "503": {
+                        "description": "MQTT not configured",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/iot/devices/{deviceId}/simulate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Publishes to MQTT topic devices/:deviceId/telemetry exactly as a real device would. A subscriber running in this API process picks it up, persists it, and forwards it onto the realtime \"iot:telemetry\" topic — watch it arrive live on the Realtime page while this call returns immediately (publish is fire-and-forget; the round trip is asynchronous).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "iot"
+                ],
+                "summary": "Simulate a device telemetry reading over MQTT",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Device ID",
+                        "name": "deviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Metric + optional value/unit",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.SimulateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.SimulateResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    },
+                    "503": {
+                        "description": "MQTT not configured",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/iot/telemetry": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Paginated, most recent first. Optionally filter to one device with ?deviceId=. This is the durable record of what MQTT delivered — the realtime WS/SSE push is \"while you're watching\", this is \"what did I miss\".",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "iot"
+                ],
+                "summary": "List persisted device telemetry readings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter to one device",
+                        "name": "deviceId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page",
+                        "name": "perPage",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.TelemetryResponse"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/admin/notifications/test-email": {
             "post": {
                 "security": [
@@ -139,6 +303,75 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/realtime/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generic pub/sub test endpoint, independent of the notification system — delivers to every WebSocket/SSE client currently subscribed to Topic (including ones that joined via a WebSocket {\"action\":\"subscribe\",...} frame or ?topic= SSE query param). Returns how many connections actually received it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "realtime"
+                ],
+                "summary": "Publish an event to an arbitrary topic (admin diagnostic)",
+                "parameters": [
+                    {
+                        "description": "Topic + event payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_realtime_dto.PublishRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_realtime_dto.PublishResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/realtime/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "realtime"
+                ],
+                "summary": "Current WebSocket/SSE connection and topic occupancy",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_realtime_dto.StatsResponse"
                         }
                     }
                 }
@@ -608,6 +841,51 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/me/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams events as text/event-stream. Defaults to the caller's private notification channel; pass ?topic=\u003cname\u003e to instead watch an arbitrary topic (the SSE protocol is one-directional, so unlike /v1/me/ws the topic is fixed for the connection's lifetime). Auth: Authorization header or ?token= query param (browsers' EventSource can't set headers).",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "realtime"
+                ],
+                "summary": "Open a live Server-Sent Events stream",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Access token (EventSource can't set the Authorization header)",
+                        "name": "token",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Topic to watch instead of the caller's private channel",
+                        "name": "topic",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "text/event-stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/me/mobiles": {
             "get": {
                 "security": [
@@ -933,6 +1211,42 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/me/ws": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upgrades to WebSocket and auto-subscribes to the caller's private notification channel. Send {\"action\":\"subscribe\",\"topic\":\"...\"} or {\"action\":\"unsubscribe\",\"topic\":\"...\"} JSON frames to join/leave additional arbitrary topics for the generic pub/sub demo. Auth: Authorization header or ?token= query param (browsers can't set headers on the WebSocket handshake).",
+                "tags": [
+                    "realtime"
+                ],
+                "summary": "Open a live WebSocket connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Access token (browser WebSocket clients can't set the Authorization header)",
+                        "name": "token",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
                         }
@@ -1494,6 +1808,77 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.CommandRequest": {
+            "type": "object",
+            "required": [
+                "command"
+            ],
+            "properties": {
+                "command": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.CommandResponse": {
+            "type": "object",
+            "properties": {
+                "published": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.SimulateRequest": {
+            "type": "object",
+            "required": [
+                "metric"
+            ],
+            "properties": {
+                "metric": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.SimulateResponse": {
+            "type": "object",
+            "properties": {
+                "published": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_iot_dto.TelemetryResponse": {
+            "type": "object",
+            "properties": {
+                "deviceId": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metric": {
+                    "type": "string"
+                },
+                "recordedAt": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
         "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_mobile_entity.UserMobile": {
             "type": "object",
             "properties": {
@@ -1616,6 +2001,56 @@ const docTemplate = `{
                 },
                 "lastUsedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_realtime_dto.PublishRequest": {
+            "type": "object",
+            "required": [
+                "topic",
+                "type"
+            ],
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "title": {
+                    "type": "string"
+                },
+                "topic": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_realtime_dto.PublishResponse": {
+            "type": "object",
+            "properties": {
+                "delivered": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_realtime_dto.StatsResponse": {
+            "type": "object",
+            "properties": {
+                "clientCount": {
+                    "type": "integer"
+                },
+                "topicCount": {
+                    "type": "integer"
+                },
+                "topics": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
                 }
             }
         },

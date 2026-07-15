@@ -33,6 +33,7 @@ type Config struct {
 	Queue        QueueConfig
 	RabbitMQ     RabbitMQConfig
 	Kafka        KafkaConfig
+	MQTT         MQTTConfig
 }
 
 type AppConfig struct {
@@ -183,6 +184,19 @@ type KafkaConfig struct {
 	GroupID string `mapstructure:"KAFKA_GROUP_ID"` // consumer group id for the worker
 }
 
+// MQTTConfig configures the modules/iot device-telemetry demo's broker
+// connection (pkg/mqtt) — unrelated to QueueConfig/RabbitMQConfig/
+// KafkaConfig above, which are the background-job queue backends. BrokerURL
+// empty (the default) disables MQTT entirely: modules/iot's routes stay
+// registered but every call returns ErrMQTTNotConfigured, same convention
+// as a nil *email.Mailer or unset FIREBASE_CREDENTIALS_FILE.
+type MQTTConfig struct {
+	BrokerURL string `mapstructure:"MQTT_BROKER_URL"` // e.g. tcp://mosquitto:1883 — empty disables MQTT
+	ClientID  string `mapstructure:"MQTT_CLIENT_ID"`
+	Username  string `mapstructure:"MQTT_USERNAME"`
+	Password  string `mapstructure:"MQTT_PASSWORD"`
+}
+
 func Load() (*Config, error) {
 	v := viper.New()
 
@@ -242,6 +256,8 @@ func Load() (*Config, error) {
 	v.SetDefault("KAFKA_BROKERS", "localhost:9092")
 	v.SetDefault("KAFKA_TOPIC", "bread.tasks")
 	v.SetDefault("KAFKA_GROUP_ID", "bread.worker")
+	// MQTT (pkg/mqtt, modules/iot) — BrokerURL left blank by default (disabled)
+	v.SetDefault("MQTT_CLIENT_ID", "bread-api")
 	v.SetDefault("GITHUB_REDIRECT_URL", "http://localhost:3000/v1/auth/github/callback")
 	v.SetDefault("WEBAUTHN_RP_ID", "localhost")
 	v.SetDefault("WEBAUTHN_RP_ORIGIN", "http://localhost:3000")
@@ -365,6 +381,12 @@ func Load() (*Config, error) {
 		Brokers: v.GetString("KAFKA_BROKERS"),
 		Topic:   v.GetString("KAFKA_TOPIC"),
 		GroupID: v.GetString("KAFKA_GROUP_ID"),
+	}
+	cfg.MQTT = MQTTConfig{
+		BrokerURL: v.GetString("MQTT_BROKER_URL"),
+		ClientID:  v.GetString("MQTT_CLIENT_ID"),
+		Username:  v.GetString("MQTT_USERNAME"),
+		Password:  v.GetString("MQTT_PASSWORD"),
 	}
 	cfg.GitHub = GitHubConfig{
 		ClientID:     v.GetString("GITHUB_CLIENT_ID"),

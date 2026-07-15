@@ -42,6 +42,7 @@ make dev-worker-kafka    # hot-reload the Kafka worker with air
 make docker-worker       # docker-up + Redis/Asynq worker (profile: worker)
 make docker-rabbitmq     # docker-up + RabbitMQ broker + worker (profile: rabbitmq)
 make docker-kafka        # docker-up + Kafka broker + worker (profile: kafka)
+make docker-mqtt         # docker-up + Mosquitto MQTT broker (modules/iot demo, profile: mqtt)
 make help               # full target list
 ```
 
@@ -59,6 +60,8 @@ make help               # full target list
 | 2FA | `pquerna/otp` (TOTP) |
 | Passkey/WebAuthn | `go-webauthn/webauthn` |
 | Background jobs | `hibiken/asynq` (Redis, default) or `rabbitmq/amqp091-go` / `segmentio/kafka-go` — selected via `QUEUE_DRIVER` (`pkg/worker`, `pkg/queue`) |
+| Realtime (WS/SSE) | `gorilla/websocket` + stdlib SSE (`pkg/realtime`, `modules/realtime`) — see "Realtime (WebSocket / SSE / Pub-Sub)" |
+| MQTT | `eclipse/paho.mqtt.golang` (`pkg/mqtt`, `modules/iot` device-telemetry demo) — see "IoT (MQTT Device Telemetry Demo)" |
 | Config | `spf13/viper` (.env + env vars + defaults) |
 | Validation | `go-playground/validator/v10` (centralised in `shared/validate`) |
 | Logging | `go.uber.org/zap` |
@@ -106,9 +109,11 @@ modules/                        ← Domain modules (future microservices)
   appversion/
   featureflag/
   health/
+  iot/                         ← MQTT device-telemetry demo (pkg/mqtt)
   mobile/
   notification/
   passkey/
+  realtime/                    ← WebSocket/SSE + generic pub-sub (pkg/realtime)
   tenant/
 
 shared/                         ← Cross-cutting infrastructure (no business logic)
@@ -127,6 +132,8 @@ pkg/                            ← Pure utilities (zero domain knowledge)
   i18n/                         ← Locale loader + Translator + Gin middleware
   jwt/                          ← ES256/ES512 key manager
   logger/                       ← Zap factory
+  mqtt/                         ← paho MQTT client wrapper (modules/iot)
+  realtime/                     ← WebSocket/SSE fan-out Hub (modules/realtime)
   sms/                          ← Twilio SMS + WhatsApp sender
   storage/                      ← AWS S3 presign / upload / delete
   uuidbson/                     ← UUID BSON Binary-4 codec
@@ -700,6 +707,88 @@ parallel of `pkg/worker/tasks`) and are registered identically by both
 
 ---
 
+## Realtime (WebSocket / SSE / Pub-Sub)
+
+`pkg/realtime` is a transport-agnostic, in-process pub/sub fan-out core
+(`Hub` — `Subscribe`/`Unsubscribe`/`Publish`/`Stats`, zero domain knowledge).
+`modules/realtime` wraps it with the one domain convention other code needs
+— every user has a private topic `user:<id>` — and exposes it over HTTP:
+
+```
+GET  /v1/me/ws                    → upgrades to WebSocket, auto-subscribed to the caller's private topic
+GET  /v1/me/events                → SSE stream, defaults to the caller's private topic; ?topic= to watch another
+POST /v1/admin/realtime/publish   → admin: publish an arbitrary event to an arbitrary topic (generic pub/sub test)
+GET  /v1/admin/realtime/stats     → admin: current topic/connection counts
+```
+
+- **Auth over WebSocket/SSE:** browsers' native `WebSocket` and `EventSource`
+  APIs cannot set an `Authorization` header. `middleware.AuthJWTAccessWS`
+  (used only on `/v1/me/ws` and `/v1/me/events`) accepts the token via
+  `?token=` as a fallback — `middleware.AuthJWTAccess` (header-only) still
+  guards every other route, including the admin realtime endpoints above.
+- **Generic pub/sub over WebSocket:** after connecting, a client may send
+  `{"action":"subscribe","topic":"..."}` / `{"action":"unsubscribe",...}` JSON
+  frames to join/leave additional topics beyond its auto-subscribed private
+  channel — see `modules/realtime/handler/realtime.handler.go`'s
+  `wsReadPump`. SSE is one-directional, so its topic is fixed at connect
+  time via `?topic=`.
+- **Notification integration:** `NotificationService.Send` (`modules/notification/service`)
+  pushes a live event to `PublishToUser` on top of (not instead of) its
+  normal channel-specific delivery (email/push/in-app/silent) — every
+  `POST /v1/admin/notifications/send` or `/broadcast` call is visible on a
+  connected WebSocket/SSE client in addition to being persisted for
+  `GET /v1/me/notifications`. `modules/notification/service` depends on a
+  small local `RealtimePublisher` interface (not the full `realtime.Service`
+  contract) — `nil` (e.g. inside a worker process, which holds no
+  connections) just skips the live push.
+- **Fire-and-forget, no replay:** if nobody is connected to a topic when
+  `Publish` is called, the event is silently dropped — there is no buffering.
+  `GET /v1/me/notifications` and `GET /v1/admin/iot/telemetry` are the
+  durable records; realtime delivery is "while you're watching" on top.
+- **Web test client:** `/realtime` (`web/src/pages/RealtimePage.tsx`) —
+  connect/disconnect panels for both WebSocket and SSE with a live event
+  log, a join/leave-topic control for the WebSocket panel, the admin publish
+  form, and a stats panel. This is the page to use to manually verify any of
+  the above.
+
+## IoT (MQTT Device Telemetry Demo)
+
+`pkg/mqtt` is a thin wrapper around `eclipse/paho.mqtt.golang` (Connect/
+Publish/Subscribe/Close). `modules/iot` is a self-contained demo built on
+it — **not** a fourth `QUEUE_DRIVER` backend, unrelated to the task-queue
+system above:
+
+```
+POST /v1/admin/iot/devices/:deviceId/simulate  → publishes to MQTT topic devices/:deviceId/telemetry, as if a real device sent it
+POST /v1/admin/iot/devices/:deviceId/command   → publishes to devices/:deviceId/commands (fire-and-forget; nothing subscribes to it — a real device would)
+GET  /v1/admin/iot/telemetry                   → paginated, persisted readings (MongoDB, TTL 1 day)
+```
+
+The full round trip: `Simulate` → MQTT broker → a subscriber on
+`devices/+/telemetry` running inside the API process (`IoTService.Start`,
+registered once at startup) → persists to the `device_telemetry` collection
+→ forwards the reading onto `modules/realtime`'s generic pub/sub topic
+`iot:telemetry` (via the same narrow `RealtimePublisher` pattern
+`modules/notification` uses) → any WebSocket/SSE client watching that topic
+sees it arrive live. Connect the **Realtime** page (WS or SSE, topic
+`iot:telemetry`) and then click **Simulate** on the **IoT** page
+(`/admin/iot`) to watch the whole chain fire.
+
+- **Optional, like Firebase/Apple/GitHub OAuth:** `MQTT_BROKER_URL` empty
+  (the default) or a failed dial at startup just disables `modules/iot` —
+  every call returns `errors.ErrMQTTNotConfigured` (503) rather than
+  breaking API startup. `apps/api/app/app.go` logs a warning and continues.
+- **Broker:** `make docker-mqtt` starts an Eclipse Mosquitto container
+  (`mosquitto/mosquitto.conf` — anonymous access, local-dev only, no TLS) on
+  the `mqtt` Compose profile. Set `MQTT_BROKER_URL=tcp://mosquitto:1883` in
+  `.env` first, same "the driver you pick must have its backing service
+  actually running" rule as `QUEUE_DRIVER`.
+- Services depend on the small `MQTTClient` interface (`Publish`/`Subscribe`)
+  in `modules/iot/service`, not `pkg/mqtt` directly — a `*pkg/mqtt.Client`
+  satisfies it; tests fake just the `Publisher` half (no real broker).
+
+---
+
 ## Multi-language (i18n)
 
 Locale files: `locales/en.json` (default), `locales/id.json`
@@ -714,6 +803,8 @@ passkey.*       ← WebAuthn messages
 mobile.*        ← OTP / mobile verification
 appVersion.*    ← App version check messages
 notification.*  ← Notification messages
+realtime.*      ← WebSocket/SSE/pub-sub messages
+iot.*           ← MQTT device-telemetry demo messages
 analytics.*     ← Analytics endpoint messages
 apiKey.*        ← API key messages
 tenant.*        ← Multi-tenant messages
@@ -734,9 +825,9 @@ email.*         ← All email template text tokens
   they're English-only today and intentionally rely on the fallback below;
   don't feel obligated to add Indonesian translations there unless you're
   doing a real localization pass. `auth.*`, `user.*`, `mobile.*`,
-  `appVersion.*`, `notification.*`, `analytics.*`, `http.*`, `health.*`, and
-  `validation.*` are fully bilingual — keep new keys in those namespaces
-  bilingual too.
+  `appVersion.*`, `notification.*`, `realtime.*`, `iot.*`, `analytics.*`,
+  `http.*`, `health.*`, and `validation.*` are fully bilingual — keep new
+  keys in those namespaces bilingual too.
 - `validation.*` covers both the per-field validator-tag messages
   (`validation.required`, `validation.min`, …) AND the two response-envelope
   messages `shared/validate.BindJSON`/`BindQuery` use directly:
@@ -883,12 +974,32 @@ and the worker's `make dev-worker*` targets don't touch Swagger.
 exercises every HTTP-exposed endpoint of `apps/api` — auth, 2FA, passkeys
 (real WebAuthn ceremonies via `@simplewebauthn/browser`), mobile OTP,
 notifications, admin users/roles/app-versions/analytics/notifications,
-health — plus a generic raw-request API console, an **i18n Compare** page
-(`/i18n-compare`) that fires one request twice with different
-`x-custom-lang` headers to compare translated responses side by side, and a
-client-side activity log for anything not covered by a dedicated page. It
-talks to the API directly over `fetch` (CORS already allows `*`); no backend
-code changes were needed to support it.
+realtime WebSocket/SSE, IoT/MQTT, health — plus a generic raw-request API
+console, an **i18n Compare** page (`/i18n-compare`) that fires one request
+twice with different `x-custom-lang` headers to compare translated
+responses side by side, and a client-side activity log for anything not
+covered by a dedicated page. It talks to the API directly over `fetch`
+(CORS already allows `*`) or native `WebSocket`/`EventSource`; no backend
+code changes were needed to support any of it.
+
+**Realtime** (`/realtime`, `web/src/pages/RealtimePage.tsx`) — connect/
+disconnect panels for both `GET /v1/me/ws` and `GET /v1/me/events`, each
+with a live event log; the WebSocket panel can also join/leave an arbitrary
+topic via a subscribe/unsubscribe control frame. Below that, an admin
+**Publish to topic** form (`POST /v1/admin/realtime/publish`) for the
+generic pub/sub path, and a **stats** panel
+(`GET /v1/admin/realtime/stats`). The page shows your own private channel
+name (`user:<your-id>`) — every notification sent to you via Admin →
+Notifications shows up here live in addition to being persisted.
+
+**Admin → IoT** (`/admin/iot`, `web/src/pages/IotPage.tsx`) — **Simulate**
+publishes a reading to MQTT as if a real device sent it, **Send command**
+publishes in the other direction, and a paginated table shows persisted
+readings from `GET /v1/admin/iot/telemetry`. Open the Realtime page in
+another tab (WS or SSE, topic `iot:telemetry`) before clicking Simulate to
+watch the full MQTT → subscriber → Mongo → realtime-push chain fire live.
+Requires `MQTT_BROKER_URL` to be configured (`make docker-mqtt`) or both
+forms return a 503.
 
 **Admin → Notifications** (`/admin/notifications`,
 `web/src/pages/AdminNotificationsPage.tsx`) is the page for manually testing
@@ -938,9 +1049,17 @@ Tests live next to their implementation (same package, `_test.go` suffix):
 modules/user/service/user.service_test.go
 shared/pagination/pagination_test.go
 modules/appversion/service/appversion_test.go
+pkg/realtime/hub_test.go                    # fake in-memory Client, no network
+modules/realtime/service/realtime.service_test.go
+modules/iot/service/iot.service_test.go     # fake MQTT Publisher, no real broker
 ```
 
-Use fake/stub implementations, never real MongoDB/Redis in unit tests.
+Use fake/stub implementations, never real MongoDB/Redis in unit tests. The
+MQTT-subscribe side (`IoTService.Start`/`handleTelemetry`) and any
+`NotificationService`/`Broadcast` path that touches `s.prefsCol`/`s.deviceCol`
+aren't unit-tested for the same reason — they need a real `*mongo.Collection`
+and belong in `tests/e2e` instead (see the live-verification notes in each
+service's test file for what's covered vs. not).
 
 ### Integration tests
 `tests/integration/` — use `httptest.NewRecorder()` and `gin.CreateTestContext()`.
@@ -993,6 +1112,10 @@ MULTI_TENANT_ENABLED=false     # enable multi-tenant mode
 QUEUE_DRIVER=redis             # "redis" (default, apps/worker) | "rabbitmq" (apps/worker-rabbitmq) | "kafka" (apps/worker-kafka)
 RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/   # used when QUEUE_DRIVER=rabbitmq
 KAFKA_BROKERS=kafka:9092                          # used when QUEUE_DRIVER=kafka
+
+# MQTT (modules/iot demo) — unrelated to QUEUE_DRIVER above. Blank (default)
+# disables modules/iot entirely (every call returns 503).
+MQTT_BROKER_URL=               # e.g. tcp://mosquitto:1883 — set to use `make docker-mqtt`
 ```
 
 In Docker, `MONGO_URI` and `REDIS_HOST` are always overridden by
@@ -1082,7 +1205,8 @@ make docker-up          # start: API + MongoDB 3-node rs + Redis
 make docker-worker      # same + Redis/Asynq background worker (profile: worker)
 make docker-rabbitmq    # same + RabbitMQ broker + RabbitMQ worker (profile: rabbitmq)
 make docker-kafka       # same + Kafka broker + Kafka worker (profile: kafka)
-make docker-down        # stop all (all three worker profiles)
+make docker-mqtt        # same + Mosquitto MQTT broker (profile: mqtt, modules/iot demo)
+make docker-down        # stop all (all four profiles above)
 make docker-rebuild     # rebuild + restart app container only
 make docker-clean       # remove containers AND volumes (destructive)
 make seed               # seed DB (runs inside Docker network, requires docker-up)
@@ -1095,6 +1219,9 @@ choices of **one** queue backend, not additive — each is a separate Compose
 profile (`worker` / `rabbitmq` / `kafka`) that starts its own broker (where
 applicable) and matching worker container. Set `QUEUE_DRIVER` in `.env` to
 match whichever one you start. See "Background Job Queue Backends" above.
+`docker-mqtt` (profile `mqtt`) is independent of all three — it's the
+`modules/iot` demo's own broker, not a `QUEUE_DRIVER` choice; combine it
+with any of the above.
 
 The `email-builder` Docker stage compiles React Email templates before the
 Go build stage runs, so the embedded HTML is always fresh in Docker builds.
@@ -1154,6 +1281,10 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `POST /v1/admin/notifications/send` or `/broadcast` with `channel: "email"` returns 400 "Recipient email address is required" | `NotificationService.sendEmail` has no `UserRepo` to look up the recipient's real address yet — include `"data": {"email": "..."}` in the request body. This used to surface as an opaque 500 (`errors.ErrEmailNotAvailable`/`ErrMailerNotConfigured` now map it to a proper 4xx via `response.HandleAppError`) |
 | `make dev` feels slow on every save, even for unrelated changes | Expected — `scripts/dev/air-build-api.sh` runs `swag init` (a few seconds) before every rebuild by design, so Swagger docs never go stale. Email templates only rebuild when `email-templates/src` actually changed |
 | Edited an email `.tsx` under `make dev` but the rendered HTML didn't change | Check `.air/build.log` for an `npm run build` failure; also confirm Node.js is on `PATH` — the script skips the email rebuild (with a warning) if `node` isn't found, but still regenerates Swagger and builds the Go binary |
+| Browser `WebSocket`/`EventSource` to `/v1/me/ws` or `/v1/me/events` gets 401 | Neither API can set an `Authorization` header — pass the access token as `?token=` instead; that's why those two routes use `middleware.AuthJWTAccessWS`, not the regular `authMw` |
+| `POST /v1/admin/iot/devices/:id/simulate` or `/command` returns 503 | `MQTT_BROKER_URL` is unset or the broker dial failed at startup (check the API log for "MQTT connect failed") — set it and run `make docker-mqtt`, then restart the API |
+| Simulated telemetry never shows up on the Realtime page | The WS/SSE client must be subscribed to topic `iot:telemetry` specifically — the private per-user channel doesn't receive it. Also confirm `MQTT_BROKER_URL` is actually configured, not just that `/simulate` returned 200 (publish succeeding doesn't guarantee a subscriber is running if `IoTService.Start()` failed — check the log) |
+| Adding a `pkg/mqtt`/`pkg/realtime` capability directly in a `modules/*/service` file | Depend on a small local interface (`Publisher`, `RealtimePublisher`, ...) satisfied structurally by the concrete type — same pattern as `EmailQueue` — never import `paho.mqtt.golang` or `gorilla/websocket` outside `pkg/mqtt`/`pkg/realtime` and the `modules/realtime` handler |
 
 ---
 
@@ -1177,6 +1308,12 @@ Go build stage runs, so the embedded HTML is always fresh in Docker builds.
 | `pkg/queue/kafka/kafka.go` | Kafka `Publisher`/`Consumer` impl (topic + consumer group, `segmentio/kafka-go`) |
 | `pkg/queue/tasks/tasks.go` | Task handlers shared by `apps/worker-rabbitmq` and `apps/worker-kafka` |
 | `apps/api/app/app.go` (`buildJobQueue`) | Picks the enqueue-side `Publisher` from `QUEUE_DRIVER` — must match the worker process actually running |
+| `pkg/realtime/hub.go` | `Hub` — the WebSocket/SSE fan-out core (`Subscribe`/`Unsubscribe`/`Publish`/`Stats`), zero domain knowledge |
+| `modules/realtime/service/realtime.service.go` | `UserTopic(id)` naming convention + the `realtime.Service` contract implementation other modules call |
+| `modules/realtime/handler/realtime.handler.go` | `GET /v1/me/ws` (gorilla/websocket upgrade), `GET /v1/me/events` (SSE via `c.Stream`), admin publish/stats |
+| `shared/middleware/auth.go` (`AuthJWTAccessWS`) | JWT middleware variant accepting `?token=` — used only by the two realtime routes above |
+| `pkg/mqtt/client.go` | Thin `paho.mqtt.golang` wrapper — `Connect`/`Publish`/`Subscribe`/`Close` |
+| `modules/iot/service/iot.service.go` | `SimulateTelemetry`/`SendCommand` (publish side) + `Start`/`handleTelemetry` (subscribe side, persists + forwards to `modules/realtime`) |
 | `modules/activity/service/activity.service.go` | Action constants + log helpers |
 | `modules/<name>/contract.go` | Public interface — the only safe cross-module import |
 | `pkg/dbid/dbid.go` | ID strategy helpers (uuid / objectid) — see `docs/id-migration.md` |

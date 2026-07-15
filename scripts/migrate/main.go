@@ -171,5 +171,12 @@ func allIndexSpecs() []indexSpec {
 		{collection: "notification_preferences", models: []mongo.IndexModel{
 			{Keys: bson.D{{Key: "userId", Value: 1}}, Options: unique("idx_user_id_unique")},
 		}},
+
+		// ── device_telemetry (modules/iot MQTT demo) ────────────────────────────
+		{collection: "device_telemetry", models: []mongo.IndexModel{
+			{Keys: bson.D{{Key: "deviceId", Value: 1}, {Key: "recordedAt", Value: -1}}, Options: plain("idx_device_recorded")},
+			// TTL: auto-delete after 1 day — diagnostic feed, not long-term storage.
+			{Keys: bson.D{{Key: "recordedAt", Value: 1}}, Options: ttl("idx_ttl_1d", 86400)},
+		}},
 	}
 }

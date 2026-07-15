@@ -23,13 +23,43 @@ const (
 // AuthJWTAccess validates the Bearer access token.
 // It also checks the session is still active in Redis (stateful).
 func AuthJWTAccess(jwtMgr *jwtpkg.Manager, sessions SessionStore) gin.HandlerFunc {
+	return authJWTAccess(jwtMgr, sessions, bearerHeaderToken)
+}
+
+// AuthJWTAccessWS is AuthJWTAccess for endpoints a browser reaches via the
+// native WebSocket or EventSource APIs, neither of which can set an
+// Authorization header. It accepts the access token from the Authorization
+// header when present (non-browser clients), falling back to a `?token=`
+// query parameter — used only by GET /v1/me/ws and GET /v1/me/events.
+func AuthJWTAccessWS(jwtMgr *jwtpkg.Manager, sessions SessionStore) gin.HandlerFunc {
+	return authJWTAccess(jwtMgr, sessions, bearerHeaderOrQueryToken)
+}
+
+func bearerHeaderToken(c *gin.Context) (string, bool) {
+	raw := c.GetHeader("Authorization")
+	if !strings.HasPrefix(raw, "Bearer ") {
+		return "", false
+	}
+	return strings.TrimPrefix(raw, "Bearer "), true
+}
+
+func bearerHeaderOrQueryToken(c *gin.Context) (string, bool) {
+	if tok, ok := bearerHeaderToken(c); ok {
+		return tok, true
+	}
+	if tok := c.Query("token"); tok != "" {
+		return tok, true
+	}
+	return "", false
+}
+
+func authJWTAccess(jwtMgr *jwtpkg.Manager, sessions SessionStore, extractToken func(*gin.Context) (string, bool)) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		raw := c.GetHeader("Authorization")
-		if !strings.HasPrefix(raw, "Bearer ") {
+		tokenStr, ok := extractToken(c)
+		if !ok {
 			response.UnauthorizedI18n(c, "auth.missingAuthHeader")
 			return
 		}
-		tokenStr := strings.TrimPrefix(raw, "Bearer ")
 
 		claims, err := jwtMgr.ParseAccess(tokenStr)
 		if err != nil {
@@ -38,7 +68,7 @@ func AuthJWTAccess(jwtMgr *jwtpkg.Manager, sessions SessionStore) gin.HandlerFun
 		}
 
 		// Stateful check: session must still be in Redis
-		ok, err := sessions.Exists(c.Request.Context(), claims.SessionID)
+		ok, err = sessions.Exists(c.Request.Context(), claims.SessionID)
 		if err != nil || !ok {
 			response.UnauthorizedI18n(c, "auth.sessionRevoked")
 			return

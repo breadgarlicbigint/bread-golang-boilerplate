@@ -9,6 +9,7 @@ import (
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/database"
 	notifEntity "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/notification/entity"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/notification/dto"
+	realtime "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/realtime"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/email"
 	"go.mongodb.org/mongo-driver/bson"
 	"github.com/google/uuid"
@@ -40,27 +41,39 @@ type PromotionalEmailQueue interface {
 	EnqueuePromotionalEmail(to, subject, html, text string) error
 }
 
-type NotificationService struct {
-	notifCol   *mongo.Collection
-	deviceCol  *mongo.Collection
-	prefsCol   *mongo.Collection
-	fcm        *FCMSender
-	mailer     *email.Mailer
-	emailQueue TransactionalEmailQueue
-	promoQueue PromotionalEmailQueue
-	log        *zap.Logger
+// RealtimePublisher pushes a live event to a user's connected WebSocket/SSE
+// clients (see modules/realtime — this is that module's public contract,
+// narrowed to the one method notifications need). Optional — a nil
+// publisher (e.g. inside a worker process, which holds no connections of
+// its own) just skips the live push; the notification still persists/sends
+// through its normal channel path either way.
+type RealtimePublisher interface {
+	PublishToUser(userID string, evt realtime.Event) (int, error)
 }
 
-func New(db *database.MongoDB, fcm *FCMSender, mailer *email.Mailer, emailQueue TransactionalEmailQueue, promoQueue PromotionalEmailQueue, log *zap.Logger) *NotificationService {
+type NotificationService struct {
+	notifCol    *mongo.Collection
+	deviceCol   *mongo.Collection
+	prefsCol    *mongo.Collection
+	fcm         *FCMSender
+	mailer      *email.Mailer
+	emailQueue  TransactionalEmailQueue
+	promoQueue  PromotionalEmailQueue
+	realtimePub RealtimePublisher
+	log         *zap.Logger
+}
+
+func New(db *database.MongoDB, fcm *FCMSender, mailer *email.Mailer, emailQueue TransactionalEmailQueue, promoQueue PromotionalEmailQueue, realtimePub RealtimePublisher, log *zap.Logger) *NotificationService {
 	return &NotificationService{
-		notifCol:   db.Collection(notifCol),
-		deviceCol:  db.Collection(deviceCol),
-		prefsCol:   db.Collection(prefsCol),
-		fcm:        fcm,
-		mailer:     mailer,
-		emailQueue: emailQueue,
-		promoQueue: promoQueue,
-		log:        log,
+		notifCol:    db.Collection(notifCol),
+		deviceCol:   db.Collection(deviceCol),
+		prefsCol:    db.Collection(prefsCol),
+		fcm:         fcm,
+		mailer:      mailer,
+		emailQueue:  emailQueue,
+		promoQueue:  promoQueue,
+		realtimePub: realtimePub,
+		log:         log,
 	}
 }
 
@@ -161,6 +174,25 @@ func (s *NotificationService) Send(ctx context.Context, req dto.SendRequest) err
 	if req.Channel == notifEntity.ChannelInApp || notif.Status == notifEntity.StatusFailed {
 		_, _ = s.notifCol.InsertOne(ctx, notif)
 	}
+
+	// Push live over WebSocket/SSE to any connected client — best-effort,
+	// on top of (not instead of) the channel-specific delivery above. A nil
+	// realtimePub (no realtime module wired in, e.g. inside a worker
+	// process) or nobody currently connected just means 0 recipients.
+	if s.realtimePub != nil {
+		_, _ = s.realtimePub.PublishToUser(req.UserID, realtime.Event{
+			Type:  "notification",
+			Title: notif.Title,
+			Body:  notif.Body,
+			Data: map[string]any{
+				"id":      notif.ID.String(),
+				"type":    string(notif.Type),
+				"channel": string(notif.Channel),
+				"status":  string(notif.Status),
+			},
+		})
+	}
+
 	return sendErr
 }
 

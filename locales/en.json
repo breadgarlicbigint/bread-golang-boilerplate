@@ -114,6 +114,17 @@
     "mailerNotConfigured": "Email delivery is not configured",
     "emailNotAvailable": "Recipient email address is required in data.email for the email channel"
   },
+  "realtime": {
+    "publishSuccess": "Event published",
+    "statsFetched": "Realtime stats fetched",
+    "streamingUnsupported": "Streaming is not supported by this connection"
+  },
+  "iot": {
+    "simulateSuccess": "Telemetry reading published",
+    "commandSuccess": "Command published",
+    "telemetryListed": "Telemetry fetched",
+    "mqttNotConfigured": "MQTT broker is not configured"
+  },
   "apiKey": {
     "createSuccess": "API key created",
     "listSuccess": "API keys fetched",

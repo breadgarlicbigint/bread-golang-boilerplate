@@ -43,6 +43,9 @@ export function Layout() {
           <NavLink to="/notifications" className={linkClass}>
             Notifications
           </NavLink>
+          <NavLink to="/realtime" className={linkClass}>
+            Realtime (WS/SSE)
+          </NavLink>
           <NavLink to="/oauth" className={linkClass}>
             OAuth / Social
           </NavLink>
@@ -61,6 +64,9 @@ export function Layout() {
             </NavLink>
             <NavLink to="/admin/notifications" className={linkClass}>
               Notifications
+            </NavLink>
+            <NavLink to="/admin/iot" className={linkClass}>
+              IoT (MQTT)
             </NavLink>
           </NavSection>
         )}

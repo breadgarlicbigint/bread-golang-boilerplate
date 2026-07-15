@@ -102,6 +102,17 @@
     "mailerNotConfigured": "Pengiriman email belum dikonfigurasi",
     "emailNotAvailable": "Alamat email penerima wajib diisi pada data.email untuk kanal email"
   },
+  "realtime": {
+    "publishSuccess": "Peristiwa berhasil dipublikasikan",
+    "statsFetched": "Statistik realtime berhasil diambil",
+    "streamingUnsupported": "Streaming tidak didukung oleh koneksi ini"
+  },
+  "iot": {
+    "simulateSuccess": "Pembacaan telemetri berhasil dipublikasikan",
+    "commandSuccess": "Perintah berhasil dipublikasikan",
+    "telemetryListed": "Telemetri berhasil diambil",
+    "mqttNotConfigured": "Broker MQTT belum dikonfigurasi"
+  },
   "analytics": {
     "fetchSuccess": "Data berhasil diambil",
     "dateRangeRequired": "startDate dan endDate wajib diisi (YYYY-MM-DD)",

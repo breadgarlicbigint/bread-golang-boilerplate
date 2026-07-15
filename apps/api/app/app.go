@@ -22,6 +22,8 @@ import (
 	appverHdl    "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/appversion/handler"
 	appverMw     "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/appversion/middleware"
 	appverSvc    "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/appversion/service"
+	iotHdl       "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/iot/handler"
+	iotSvc       "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/iot/service"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/middleware"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/database"
@@ -34,6 +36,8 @@ import (
 	passkeyHdl   "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/passkey/handler"
 	passkeyRepo  "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/passkey/repository"
 	passkeySvc   "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/passkey/service"
+	realtimeHdl  "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/realtime/handler"
+	realtimeSvc  "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/realtime/service"
 	tenantMw     "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/tenant/middleware"
 	tenantSvc    "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/tenant/service"
 	userHdl      "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/handler"
@@ -46,6 +50,8 @@ import (
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/email"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
 	pkgi18n      "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/i18n"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/mqtt"
+	pkgrealtime  "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/realtime"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger   "github.com/swaggo/gin-swagger"
 	jwtpkg       "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/jwt"
@@ -66,6 +72,7 @@ type App struct {
 	engine     *gin.Engine
 	server     *http.Server
 	jobQueue   queue.Publisher
+	mqttClient *mqtt.Client
 }
 
 // New wires all modules and returns a ready-to-start App.
@@ -180,7 +187,37 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 			log.Warn("app: Firebase FCM init failed — push disabled", zap.Error(err))
 		}
 	}
-	notifService := notifSvc.New(mongo, fcmSender, mailer, jobQueue, jobQueue, log)
+	// ── Realtime (WebSocket / SSE / generic pub-sub) ─────────────────────────────
+	realtimeHub := pkgrealtime.NewHub()
+	realtimeService := realtimeSvc.New(realtimeHub)
+
+	notifService := notifSvc.New(mongo, fcmSender, mailer, jobQueue, jobQueue, realtimeService, log)
+
+	// ── IoT (MQTT device-telemetry demo) ──────────────────────────────────────
+	// Optional, like Firebase/Apple below — MQTT_BROKER_URL empty or a failed
+	// dial just disables modules/iot's routes (every call returns
+	// errors.ErrMQTTNotConfigured) rather than failing API startup.
+	var mqttClient *mqtt.Client
+	if cfg.MQTT.BrokerURL != "" {
+		mqttClient, err = mqtt.New(mqtt.Config{
+			BrokerURL: cfg.MQTT.BrokerURL,
+			ClientID:  cfg.MQTT.ClientID,
+			Username:  cfg.MQTT.Username,
+			Password:  cfg.MQTT.Password,
+		})
+		if err != nil {
+			log.Warn("app: MQTT connect failed — iot routes disabled", zap.Error(err))
+			mqttClient = nil
+		}
+	}
+	var iotMQTT iotSvc.MQTTClient
+	if mqttClient != nil {
+		iotMQTT = mqttClient
+	}
+	iotService := iotSvc.New(mongo, iotMQTT, realtimeService, log)
+	if err := iotService.Start(); err != nil {
+		log.Warn("app: MQTT telemetry subscription failed", zap.Error(err))
+	}
 
 	// ── App versioning ────────────────────────────────────────────────────────
 	versionService := appverSvc.New(mongo)
@@ -191,6 +228,7 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	// ── Middleware ────────────────────────────────────────────────────────────
 	sessionStore := &redisSessionStore{rdb}
 	authMw       := middleware.AuthJWTAccess(jwtMgr, sessionStore)
+	authWSMw     := middleware.AuthJWTAccessWS(jwtMgr, sessionStore)
 	adminMw      := middleware.RoleProtected("admin")
 	rateLimiter  := middleware.NewRateLimiter(rdb, cfg.Rate.Requests, cfg.Rate.Period, "global")
 	apiKeyMw     := middleware.APIKeyProtected(cfg.APIKey.Header, apiKeySvc)
@@ -274,6 +312,12 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	// Notifications
 	notifHdl.New(notifService).RegisterRoutes(v1, authMw, adminMw)
 
+	// Realtime (WebSocket / SSE / generic pub-sub)
+	realtimeHdl.New(realtimeHub, log).RegisterRoutes(v1, authMw, authWSMw, adminMw)
+
+	// IoT (MQTT device-telemetry demo)
+	iotHdl.New(iotService).RegisterRoutes(v1, authMw, adminMw)
+
 	// App versioning
 	appverHdl.New(versionService).RegisterRoutes(v1, authMw, adminMw)
 
@@ -282,12 +326,13 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	analyticsHdl.New(analyticsService, rdb, cfg.Auth.MaxPasswordAttempts).RegisterRoutes(adminV1)
 
 	app := &App{
-		cfg:      cfg,
-		log:      log,
-		mongo:    mongo,
-		rdb:      rdb,
-		engine:   engine,
-		jobQueue: jobQueue,
+		cfg:        cfg,
+		log:        log,
+		mongo:      mongo,
+		rdb:        rdb,
+		engine:     engine,
+		jobQueue:   jobQueue,
+		mqttClient: mqttClient,
 		server: &http.Server{
 			Addr:         ":" + cfg.App.Port,
 			Handler:      engine,
@@ -406,6 +451,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 	_ = a.mongo.Disconnect(ctx)
 	if a.jobQueue != nil {
 		_ = a.jobQueue.Close()
+	}
+	if a.mqttClient != nil {
+		a.mqttClient.Close()
 	}
 	_ = a.rdb.Close()
 	sentry.Flush(2 * time.Second)

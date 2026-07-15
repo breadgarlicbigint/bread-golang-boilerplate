@@ -57,7 +57,7 @@ func main() {
 	// paths directly rather than re-enqueue — only the API
 	// (apps/api/app/app.go) routes email through the transactional/
 	// promotional queues.
-	notifService := notifSvc.New(mongo, fcmSender, mailer, nil, nil, zapLog)
+	notifService := notifSvc.New(mongo, fcmSender, mailer, nil, nil, nil, zapLog)
 
 	// ── Consumer ────────────────────────────────────────────────────────────────
 	consumer, err := kafka.NewConsumer(cfg.Kafka, zapLog)

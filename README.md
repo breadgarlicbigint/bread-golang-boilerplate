@@ -17,6 +17,8 @@ A production-ready **Go** REST API boilerplate inspired by [ack-nestjs-boilerpla
 | 2FA | TOTP (speakeasy) | **pquerna/otp** |
 | Passkey / WebAuthn | — | **go-webauthn/webauthn** (FIDO2) |
 | Background jobs | BullMQ | **asynq** (Redis, default) — or **RabbitMQ** / **Kafka** via `QUEUE_DRIVER` |
+| Realtime (WebSocket/SSE) | — | **gorilla/websocket** + SSE (`pkg/realtime`, `modules/realtime`) — private per-user channel + generic pub/sub |
+| MQTT | — | **eclipse/paho.mqtt.golang** (`pkg/mqtt`, `modules/iot`) — device-telemetry demo, optional Mosquitto broker |
 | Config | @nestjs/config | **viper** |
 | Validation | class-validator | **go-playground/validator** |
 | Logging | Winston | **zap** (Uber) |
@@ -81,6 +83,11 @@ A production-ready **Go** REST API boilerplate inspired by [ack-nestjs-boilerpla
 - `make test-coverage` — HTML coverage report
 - golangci-lint config
 
+### 🔌 Realtime & IoT
+- **WebSocket** (`GET /v1/me/ws`) and **Server-Sent Events** (`GET /v1/me/events`) — every connection auto-subscribes to the caller's private channel; the WebSocket connection can also join/leave arbitrary topics for a generic pub/sub demo (`POST /v1/admin/realtime/publish`, `GET /v1/admin/realtime/stats`)
+- **Notification → realtime bridge** — `NotificationService.Send`/`Broadcast` push a live event on top of their normal email/push/in-app delivery, visible instantly on any connected WebSocket/SSE client
+- **MQTT device-telemetry demo** — `POST /v1/admin/iot/devices/:id/simulate` publishes to an MQTT broker as if a real device sent it; a subscriber inside the API persists the reading and forwards it onto the realtime pub/sub topic `iot:telemetry`, so the full publish → subscribe → persist → live-push chain is exercisable end-to-end from the web test client
+
 ### 📡 Integrations
 - **Sentry** error tracking + traces
 - **Transactional email** — AWS SES or SMTP (selected via `MAIL_DRIVER`), React Email templates, bilingual (`en`/`id`) via `pkg/i18n`, delivered asynchronously through the job queue
@@ -111,9 +118,11 @@ bread-golang-boilerplate/
 │   ├── appversion/               # Forced-update policy per platform
 │   ├── featureflag/              # Feature flags with Redis cache (service-only, no REST yet)
 │   ├── health/                   # Liveness + readiness probes
+│   ├── iot/                      # MQTT device-telemetry demo (publish/subscribe round trip)
 │   ├── mobile/                   # SMS/WhatsApp OTP verification
 │   ├── notification/             # In-app notifications + FCM push + admin send/broadcast
 │   ├── passkey/                  # WebAuthn/FIDO2 registration + login
+│   ├── realtime/                 # WebSocket/SSE delivery + generic pub/sub
 │   └── tenant/                   # Multi-tenant resolution (header/subdomain/query)
 │       # each module: contract.go entity/ dto/ repository/ service/ handler/
 ├── shared/                      # Cross-cutting infrastructure (no business logic)
@@ -131,6 +140,8 @@ bread-golang-boilerplate/
 │   ├── i18n/                     # Locale loader + Translator + Gin middleware
 │   ├── jwt/                      # ES256/ES512 token manager
 │   ├── logger/                   # Zap factory
+│   ├── mqtt/                     # paho MQTT client wrapper (modules/iot)
+│   ├── realtime/                 # WebSocket/SSE fan-out Hub (modules/realtime)
 │   ├── sms/                      # Twilio SMS + WhatsApp sender
 │   ├── storage/                  # AWS S3 client
 │   ├── uuidbson/                 # UUID BSON Binary-4 codec
@@ -413,6 +424,7 @@ optional integrations — each is disabled gracefully if unconfigured:
 | `MULTI_TENANT_ENABLED` | Multi-tenant mode (header/subdomain/query resolution) |
 | `QUEUE_DRIVER` (`redis` \| `rabbitmq` \| `kafka`) | Default background job backend — must match a worker process you run |
 | `QUEUE_TRANSACTIONAL_DRIVER` / `QUEUE_PROMOTIONAL_DRIVER` | Optional per-workload override of `QUEUE_DRIVER` — see "Routing different workloads to different brokers" below |
+| `MQTT_BROKER_URL` | The `modules/iot` MQTT demo (e.g. `tcp://mosquitto:1883` via `make docker-mqtt`) — unrelated to `QUEUE_DRIVER` |
 
 ---
 
@@ -716,17 +728,71 @@ one broker+worker pair each, which is enough when everything uses the same
 
 ---
 
+### 9b. Realtime (WebSocket / SSE / Pub-Sub) & MQTT IoT Demo
+
+Two independent features, both new: live browser delivery over
+WebSocket/SSE, and a self-contained MQTT device-telemetry demo. Neither is
+part of the `QUEUE_DRIVER` background-job system above.
+
+**Realtime** — `pkg/realtime.Hub` is a transport-agnostic pub/sub fan-out
+core; `modules/realtime` wraps it with one convention (every user has a
+private topic `user:<id>`) and exposes it over HTTP:
+
+```
+GET  /v1/me/ws                    → WebSocket, auto-subscribed to your private channel
+GET  /v1/me/events                → SSE, same default; ?topic= to watch something else
+POST /v1/admin/realtime/publish   → admin: publish an arbitrary event to an arbitrary topic
+GET  /v1/admin/realtime/stats     → admin: connection/topic counts
+```
+
+Browsers' native `WebSocket`/`EventSource` APIs can't set an `Authorization`
+header, so these two routes accept the access token via `?token=` instead
+(`middleware.AuthJWTAccessWS`) — every other route still requires the
+header. `NotificationService.Send`/`Broadcast` push a live event to the
+target user's private channel on top of (not instead of) their normal
+email/push/in-app delivery, so any admin notification send is visible
+instantly on a connected client, not just after the next
+`GET /v1/me/notifications` poll.
+
+**IoT / MQTT** — `pkg/mqtt` wraps `eclipse/paho.mqtt.golang`; `modules/iot`
+is a self-contained demo built on it:
+
+```
+POST /v1/admin/iot/devices/:id/simulate  → publishes to MQTT devices/:id/telemetry, as a real device would
+POST /v1/admin/iot/devices/:id/command   → publishes to devices/:id/commands (fire-and-forget)
+GET  /v1/admin/iot/telemetry             → paginated, persisted readings (TTL 1 day)
+```
+
+`Simulate` → MQTT broker → a subscriber running inside the API process →
+persists to MongoDB → forwards the reading onto the realtime pub/sub topic
+`iot:telemetry` → any connected WebSocket/SSE client watching that topic
+sees it live. `MQTT_BROKER_URL` empty (default) disables `modules/iot`
+entirely (every call returns 503) rather than failing API startup — same
+convention as Firebase/Apple/GitHub OAuth. Start a broker with:
+
+```bash
+make docker-mqtt   # Eclipse Mosquitto on the "mqtt" Compose profile
+```
+
+Try it from the web test client: open **Realtime** (`/realtime`), connect
+WebSocket or SSE and join topic `iot:telemetry`, then open **Admin → IoT**
+(`/admin/iot`) in another tab and click **Simulate** — the reading shows up
+on the Realtime page within milliseconds.
+
+---
+
 ### 10. Web Test Client
 
 `web/` is a React + TypeScript SPA (Vite, Tailwind, React Router) that
 exercises every HTTP-exposed endpoint of `apps/api` — auth, 2FA, passkeys
 (real WebAuthn ceremonies via `@simplewebauthn/browser`), mobile OTP,
 notifications, admin users/roles/app-versions/analytics/notifications,
-health — plus a generic raw-request API console, an **i18n Compare** page
-(`/i18n-compare`) that fires one request twice with different
-`x-custom-lang` headers to compare translated responses side by side, and a
-client-side activity log. It talks to the API directly over `fetch` (CORS
-already allows `*`); no backend changes are needed to support it.
+realtime WebSocket/SSE, IoT/MQTT, health — plus a generic raw-request API
+console, an **i18n Compare** page (`/i18n-compare`) that fires one request
+twice with different `x-custom-lang` headers to compare translated
+responses side by side, and a client-side activity log. It talks to the API
+directly over `fetch` or native `WebSocket`/`EventSource` (CORS already
+allows `*`); no backend changes are needed to support it.
 
 **Admin → Notifications** (`/admin/notifications`) is the page for manually
 exercising queue routing (see "Routing different workloads to different
@@ -736,6 +802,13 @@ user-checkbox picker — broadcasting to the `email` channel is what actually
 triggers `QUEUE_PROMOTIONAL_DRIVER`. Create a user from **Admin → Users**
 first (fires the transactional welcome email), then broadcast to `email` and
 compare which worker log picks up each one.
+
+**Realtime** (`/realtime`) connects `GET /v1/me/ws` and `GET /v1/me/events`
+with live event logs, a join/leave-topic control for the WebSocket panel,
+the admin publish-to-topic form, and a stats panel. **Admin → IoT**
+(`/admin/iot`) simulates MQTT device telemetry and shows persisted readings
+— see "Realtime (WebSocket / SSE / Pub-Sub) & MQTT IoT Demo" above for how
+the two pages demonstrate the full round trip together.
 
 ```bash
 make web-install     # cd web && npm install
@@ -804,6 +877,8 @@ GET    /v1/me/notifications/preferences        Bearer
 PATCH  /v1/me/notifications/preferences        Bearer
 POST   /v1/me/notifications/devices            Bearer
 DELETE /v1/me/notifications/devices/:token     Bearer
+GET    /v1/me/ws                               Bearer  (?token= — WebSocket)
+GET    /v1/me/events                           Bearer  (?token= — SSE)
 
 GET    /v1/app-version/check                   public
 
@@ -823,6 +898,13 @@ PUT    /v1/admin/app-versions/:platform        Admin
 POST   /v1/admin/notifications/send            Admin
 POST   /v1/admin/notifications/broadcast       Admin
 POST   /v1/admin/notifications/test-email      Admin
+
+POST   /v1/admin/realtime/publish              Admin
+GET    /v1/admin/realtime/stats                Admin
+
+POST   /v1/admin/iot/devices/:deviceId/simulate Admin
+POST   /v1/admin/iot/devices/:deviceId/command  Admin
+GET    /v1/admin/iot/telemetry                  Admin
 
 GET    /v1/admin/analytics/...                 Admin  (all analytics routes)
 

@@ -19,6 +19,8 @@ import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminAppVersionsPage } from "./pages/AdminAppVersionsPage";
 import { AdminAnalyticsPage } from "./pages/AdminAnalyticsPage";
 import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
+import { RealtimePage } from "./pages/RealtimePage";
+import { IotPage } from "./pages/IotPage";
 import { AppVersionCheckPage } from "./pages/AppVersionCheckPage";
 import { HealthPage } from "./pages/HealthPage";
 import { ApiConsolePage } from "./pages/ApiConsolePage";
@@ -52,6 +54,7 @@ export function App() {
                   <Route path="/passkeys" element={<PasskeysPage />} />
                   <Route path="/mobile" element={<MobilePage />} />
                   <Route path="/notifications" element={<NotificationsPage />} />
+                  <Route path="/realtime" element={<RealtimePage />} />
                   <Route path="/oauth" element={<OAuthPage />} />
 
                   <Route element={<AdminRoute />}>
@@ -59,6 +62,7 @@ export function App() {
                     <Route path="/admin/app-versions" element={<AdminAppVersionsPage />} />
                     <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
                     <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
+                    <Route path="/admin/iot" element={<IotPage />} />
                   </Route>
                 </Route>
 
