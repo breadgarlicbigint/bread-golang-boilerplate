@@ -17,6 +17,7 @@ type Config struct {
 	Auth         AuthConfig
 	Rate         RateLimitConfig
 	APIKey       APIKeyConfig
+	Swagger      SwaggerConfig
 	AWS          AWSConfig
 	Storage      StorageConfig
 	Mail         MailConfig
@@ -96,6 +97,17 @@ type RateLimitConfig struct {
 type APIKeyConfig struct {
 	Header string `mapstructure:"API_KEY_HEADER"`
 	Prefix string `mapstructure:"API_KEY_PREFIX"`
+}
+
+// SwaggerConfig gates the Swagger UI at /docs. Enabled defaults to on everywhere
+// except APP_ENV=production; production opts in with SWAGGER_ENABLED=true and
+// must then set User/Password, which put HTTP basic auth in front of the whole
+// /docs tree. The API refuses to start on an enabled production Swagger with no
+// credentials — the page lists every route.
+type SwaggerConfig struct {
+	Enabled  bool   `mapstructure:"SWAGGER_ENABLED"`
+	User     string `mapstructure:"SWAGGER_USER"`
+	Password string `mapstructure:"SWAGGER_PASSWORD"`
 }
 
 type AWSConfig struct {
@@ -350,6 +362,17 @@ func Load() (*Config, error) {
 	cfg.APIKey = APIKeyConfig{
 		Header: v.GetString("API_KEY_HEADER"),
 		Prefix: v.GetString("API_KEY_PREFIX"),
+	}
+	// No SetDefault: the default depends on APP_ENV, so an unset flag keeps the
+	// old behaviour (on outside production, off in it).
+	swaggerEnabled := cfg.App.Env != "production"
+	if v.IsSet("SWAGGER_ENABLED") {
+		swaggerEnabled = v.GetBool("SWAGGER_ENABLED")
+	}
+	cfg.Swagger = SwaggerConfig{
+		Enabled:  swaggerEnabled,
+		User:     v.GetString("SWAGGER_USER"),
+		Password: v.GetString("SWAGGER_PASSWORD"),
 	}
 	cfg.AWS = AWSConfig{
 		Region:          v.GetString("AWS_REGION"),
