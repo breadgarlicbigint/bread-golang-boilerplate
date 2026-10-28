@@ -183,7 +183,7 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	// ── Firebase FCM ──────────────────────────────────────────────────────────
 	var fcmSender *notifSvc.FCMSender
 	if cfg.Firebase.CredentialsFile != "" {
-		fcmSender, err = notifSvc.NewFCMSender(cfg.Firebase.CredentialsFile)
+		fcmSender, err = notifSvc.NewFCMSender(cfg.Firebase.CredentialsFile, cfg.Firebase.AndroidChannelID)
 		if err != nil {
 			log.Warn("app: Firebase FCM init failed — push disabled", zap.Error(err))
 		}

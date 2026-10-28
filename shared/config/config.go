@@ -440,7 +440,8 @@ func Load() (*Config, error) {
 		FromWhatsApp: v.GetString("TWILIO_FROM_WHATSAPP"),
 	}
 	cfg.Firebase = FirebaseConfig{
-		CredentialsFile: v.GetString("FIREBASE_CREDENTIALS_FILE"),
+		CredentialsFile:  v.GetString("FIREBASE_CREDENTIALS_FILE"),
+		AndroidChannelID: v.GetString("FCM_ANDROID_CHANNEL_ID"),
 	}
 	cfg.I18n = I18nConfig{
 		DefaultLang: v.GetString("DEFAULT_LANG"),
@@ -490,6 +491,10 @@ type VersioningConfig struct {
 
 type FirebaseConfig struct {
 	CredentialsFile string `mapstructure:"FIREBASE_CREDENTIALS_FILE"`
+	// AndroidChannelID is the notification channel pushes are delivered on; it
+	// must match the channel the Android app creates. Empty falls back to
+	// service.DefaultAndroidChannelID.
+	AndroidChannelID string `mapstructure:"FCM_ANDROID_CHANNEL_ID"`
 }
 
 type I18nConfig struct {
