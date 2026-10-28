@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -245,14 +246,16 @@ func mergeTokens(maps ...map[string]string) map[string]string {
 	return out
 }
 
-// renderWithTokens loads a template from the embedded FS and replaces all tokens.
+// renderWithTokens loads a template from the embedded FS and replaces all
+// tokens. Token values go into the HTML body html.EscapeString()ed and into the
+// plain-text body RAW: a token is substituted into HTML text nodes and href
+// attributes, so a user-authored value carrying `<`, `&` or `"` (a name, a
+// notification title/body, a password) would otherwise break the markup or
+// inject it. The .html and .txt templates share the same token names, so the
+// two bodies are rendered from the same map through two replacers — escaped for
+// HTML, raw for text. Translated/layout tokens are plain text too, so escaping
+// them is harmless.
 func renderWithTokens(name TemplateName, tokens map[string]string) (*Rendered, error) {
-	pairs := make([]string, 0, len(tokens)*2)
-	for k, v := range tokens {
-		pairs = append(pairs, k, v)
-	}
-	r := strings.NewReplacer(pairs...)
-
 	htmlBytes, err := templateFS.ReadFile(fmt.Sprintf("dist/%s.html", name))
 	if err != nil {
 		return nil, fmt.Errorf("email: load %s.html: %w", name, err)
@@ -263,7 +266,20 @@ func renderWithTokens(name TemplateName, tokens map[string]string) (*Rendered, e
 	}
 
 	return &Rendered{
-		HTML: r.Replace(string(htmlBytes)),
-		Text: r.Replace(string(textBytes)),
+		HTML: replacerFor(tokens, true).Replace(string(htmlBytes)),
+		Text: replacerFor(tokens, false).Replace(string(textBytes)),
 	}, nil
+}
+
+// replacerFor builds a token replacer; when escape is true every value is
+// html.EscapeString()ed first (the HTML body), otherwise left raw (the text body).
+func replacerFor(tokens map[string]string, escape bool) *strings.Replacer {
+	pairs := make([]string, 0, len(tokens)*2)
+	for k, v := range tokens {
+		if escape {
+			v = html.EscapeString(v)
+		}
+		pairs = append(pairs, k, v)
+	}
+	return strings.NewReplacer(pairs...)
 }
