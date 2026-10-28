@@ -389,6 +389,27 @@ generic translated 500 for anything else.
 
 ---
 
+## Validation
+
+Handlers bind and validate in one call with `validate.BindJSON(c, &req)` /
+`validate.BindQuery`. Failures return a 422 whose `errors[]` carry the JSON
+tag as the machine-readable `field` and a translated, **identifier-free**
+message: the prose names each field through the `fields.<jsonTag>` block of
+`locales/*.json` (not the Go struct field, Go type or validator tag), and a
+malformed body returns a generic `validation.invalidBody` with the raw
+decoder error logged server-side only. Comparison tags are kind-aware —
+`min`/`max`/`len`/`gt*`/`lt*` resolve to `…Length` / `…Number` / `…Items`
+message variants — so `min=1900` on an int reads "must be at least 1900",
+not "…1900 characters". Every validated DTO field must have a `fields.`
+label; `shared/validate/field_labels_test.go` fails the build otherwise.
+
+> **`oneof` panics on float fields.** go-playground's `oneof` supports only
+> strings and integers and panics with "Bad field type float64" on a float —
+> a 500, not a validation error. For a fixed set of float values register a
+> custom rule in `init()` (as `notblank` is) rather than using `oneof`.
+
+---
+
 ## Middleware Stack (in order)
 
 ```
