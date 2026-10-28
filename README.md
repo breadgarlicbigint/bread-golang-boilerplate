@@ -445,7 +445,9 @@ optional integrations — each is disabled gracefully if unconfigured:
 | Variable | Enables |
 |---|---|
 | `MAIL_DRIVER` (`ses` \| `smtp`) | Transactional email — AWS SES (`AWS_ACCESS_KEY_ID`/`AWS_SES_*`) or SMTP (`SMTP_*`) |
-| `AWS_ACCESS_KEY_ID` | SES email (if `MAIL_DRIVER=ses`) + S3 storage |
+| `STORAGE_DRIVER` (`local` \| `s3`) | File storage backend — local filesystem (default, offline) or AWS S3; `STORAGE_LOCAL_DIR`/`STORAGE_LOCAL_BASE_URL`/`UPLOAD_MAX_BYTES` |
+| `MONGO_DEPLOYMENT` (`auto` \| `standalone` \| `replicaset` \| `sharded`) | Transaction availability — `auto` probes the topology at connect; `standalone` runs non-transactional sessions |
+| `AWS_ACCESS_KEY_ID` | SES email (if `MAIL_DRIVER=ses`) + S3 storage (if `STORAGE_DRIVER=s3`) |
 | `TWILIO_ACCOUNT_SID` | SMS + WhatsApp OTP delivery |
 | `FIREBASE_CREDENTIALS_FILE` | FCM push notifications |
 | `GITHUB_CLIENT_ID` | GitHub SSO |

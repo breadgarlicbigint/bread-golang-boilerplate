@@ -45,7 +45,8 @@ func NewS3(cfg config.AWSConfig) (*S3Storage, error) {
 	}, nil
 }
 
-// Upload streams a file to S3 and returns the public URL.
+// Upload streams a file to S3 and returns its storage key (not a URL — callers
+// persist the key and resolve it via PresignDownload at read time).
 func (s *S3Storage) Upload(ctx context.Context, folder, filename string, body io.Reader, contentType string) (string, error) {
 	key := buildKey(folder, filename)
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
@@ -57,10 +58,7 @@ func (s *S3Storage) Upload(ctx context.Context, folder, filename string, body io
 	if err != nil {
 		return "", fmt.Errorf("s3: upload: %w", err)
 	}
-	if s.baseURL != "" {
-		return strings.TrimRight(s.baseURL, "/") + "/" + key, nil
-	}
-	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", s.bucket, key), nil
+	return key, nil
 }
 
 // PresignUpload generates a pre-signed URL clients can PUT to directly.
@@ -77,7 +75,9 @@ func (s *S3Storage) PresignUpload(ctx context.Context, folder, extension string)
 }
 
 // PresignDownload generates a pre-signed GET URL for a private object.
-func (s *S3Storage) PresignDownload(ctx context.Context, key string) (string, error) {
+// requestBase is unused: a presigned S3 URL is already absolute and points at
+// AWS regardless of how the browser reached our API.
+func (s *S3Storage) PresignDownload(ctx context.Context, key string, requestBase string) (string, error) {
 	req, err := s.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -86,6 +86,18 @@ func (s *S3Storage) PresignDownload(ctx context.Context, key string) (string, er
 		return "", fmt.Errorf("s3: presign download: %w", err)
 	}
 	return req.URL, nil
+}
+
+// Download fetches an object's body from S3. The caller closes the reader.
+func (s *S3Storage) Download(ctx context.Context, key string) (io.ReadCloser, error) {
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("s3: download %q: %w", key, err)
+	}
+	return out.Body, nil
 }
 
 // Delete removes an object from S3.

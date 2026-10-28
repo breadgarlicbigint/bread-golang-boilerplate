@@ -18,6 +18,7 @@ type Config struct {
 	Rate         RateLimitConfig
 	APIKey       APIKeyConfig
 	AWS          AWSConfig
+	Storage      StorageConfig
 	Mail         MailConfig
 	Google       GoogleConfig
 	Apple        AppleConfig
@@ -114,6 +115,19 @@ type AWSS3Config struct {
 type AWSSESConfig struct {
 	FromEmail string `mapstructure:"AWS_SES_FROM_EMAIL"`
 	FromName  string `mapstructure:"AWS_SES_FROM_NAME"`
+}
+
+// StorageConfig selects the file-storage backend. Driver "s3" uses
+// AWSConfig/AWSS3Config above; "local" (the offline-friendly default) writes
+// under LocalDir and serves keys from LocalBaseURL. Documents persist storage
+// KEYS, not URLs — both drivers round-trip the same key, and a key is resolved
+// to a fetchable URL at read time via storage.PresignDownload.
+type StorageConfig struct {
+	Driver       string `mapstructure:"STORAGE_DRIVER"`         // "s3" | "local" (default local)
+	LocalDir     string `mapstructure:"STORAGE_LOCAL_DIR"`      // filesystem root for the local driver
+	LocalBaseURL string `mapstructure:"STORAGE_LOCAL_BASE_URL"` // public base URL the API serves local files from
+	// UploadMaxBytes caps a single upload (0 ⇒ no cap).
+	UploadMaxBytes int64 `mapstructure:"UPLOAD_MAX_BYTES"`
 }
 
 // MailConfig selects the email transport. Driver: "ses" (default, uses
@@ -253,6 +267,11 @@ func Load() (*Config, error) {
 	v.SetDefault("API_KEY_PREFIX", "bread")
 	v.SetDefault("MAIL_DRIVER", "ses") // "ses" or "smtp"
 	v.SetDefault("SMTP_PORT", "587")
+	// Storage: offline-friendly local driver by default.
+	v.SetDefault("STORAGE_DRIVER", "local")
+	v.SetDefault("STORAGE_LOCAL_DIR", "./storage-data")
+	v.SetDefault("STORAGE_LOCAL_BASE_URL", "http://localhost:3000/files")
+	v.SetDefault("UPLOAD_MAX_BYTES", 5*1024*1024) // 5 MB per file
 	v.SetDefault("WORKER_CONCURRENCY", 10)
 	v.SetDefault("WORKER_QUEUES", "default:6,critical:3,low:1")
 	v.SetDefault("QUEUE_DRIVER", "redis") // redis | rabbitmq | kafka
@@ -345,6 +364,12 @@ func Load() (*Config, error) {
 			FromEmail: v.GetString("AWS_SES_FROM_EMAIL"),
 			FromName:  v.GetString("AWS_SES_FROM_NAME"),
 		},
+	}
+	cfg.Storage = StorageConfig{
+		Driver:         v.GetString("STORAGE_DRIVER"),
+		LocalDir:       v.GetString("STORAGE_LOCAL_DIR"),
+		LocalBaseURL:   v.GetString("STORAGE_LOCAL_BASE_URL"),
+		UploadMaxBytes: v.GetInt64("UPLOAD_MAX_BYTES"),
 	}
 	cfg.Mail = MailConfig{
 		Driver: v.GetString("MAIL_DRIVER"),
