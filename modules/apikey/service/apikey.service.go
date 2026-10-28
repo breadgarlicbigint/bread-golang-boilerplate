@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -17,25 +18,70 @@ import (
 
 const collection = "api_keys"
 
+// maxPrefixAttempts bounds the lookup-prefix re-roll in Create. See Create.
+const maxPrefixAttempts = 32
+
+// ErrKeyPrefixExhausted: every lookup prefix Create tried belongs to an active
+// key. With a short key prefix there are only so many 8-char lookup prefixes, so
+// this means a very large number of active keys — revoke unused ones.
+var ErrKeyPrefixExhausted = errors.NewI18n(http.StatusInternalServerError, "API_KEY_PREFIX_EXHAUSTED", "http.500", "No free API key prefix; revoke unused keys")
+
 type APIKeyService struct {
 	col    *mongo.Collection
 	hasher *hash.Hasher
 	prefix string
+	// prefixTaken reports whether an ACTIVE key already uses this 8-char lookup
+	// prefix. A field so tests can exercise the re-roll without a live Mongo;
+	// New wires it to the CountDocuments query.
+	prefixTaken func(ctx context.Context, prefix8 string) (bool, error)
 }
 
 func New(db *database.MongoDB, hasher *hash.Hasher, prefix string) *APIKeyService {
-	return &APIKeyService{col: db.Collection(collection), hasher: hasher, prefix: prefix}
+	s := &APIKeyService{col: db.Collection(collection), hasher: hasher, prefix: prefix}
+	s.prefixTaken = s.prefixTakenInDB
+	return s
+}
+
+func (s *APIKeyService) prefixTakenInDB(ctx context.Context, prefix8 string) (bool, error) {
+	n, err := s.col.CountDocuments(ctx, bson.M{"keyPrefix": prefix8, "isActive": true})
+	return n > 0, err
+}
+
+// freePrefix generates a raw key whose 8-char lookup prefix is free among ACTIVE
+// keys, re-rolling up to maxPrefixAttempts times. See Create for why.
+func (s *APIKeyService) freePrefix(ctx context.Context) (string, error) {
+	for attempt := 0; attempt < maxPrefixAttempts; attempt++ {
+		raw, err := hash.RandomHex(32) // 64-char hex key
+		if err != nil {
+			return "", err
+		}
+		candidate := fmt.Sprintf("%s_%s", s.prefix, raw)
+		taken, err := s.prefixTaken(ctx, candidate[:8])
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return candidate, nil
+		}
+	}
+	return "", ErrKeyPrefixExhausted
 }
 
 // Create generates a new key, hashes it, persists it, and returns the raw value once.
+//
+// The key is looked up by its first 8 characters (Validate), and a lookup takes
+// the FIRST active match. With a short default prefix only a couple of those 8
+// chars are random, so two active keys collide roughly 1 in 256 — and the second
+// is then rejected on every request. Create therefore re-rolls until the lookup
+// prefix is free among ACTIVE keys. A revoked key's prefix may be reused:
+// Validate never matches an inactive row.
 func (s *APIKeyService) Create(ctx context.Context, name, description string, keyType entity.APIKeyType,
 	permissions []string, expiresAt *time.Time, createdBy uuid.UUID) (rawKey string, k *entity.APIKey, err error) {
 
-	raw, err := hash.RandomHex(32) // 64-char hex key
+	rawKey, err = s.freePrefix(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	rawKey = fmt.Sprintf("%s_%s", s.prefix, raw)
 
 	keyHash, err := s.hasher.Hash(rawKey)
 	if err != nil {
@@ -67,7 +113,7 @@ func (s *APIKeyService) Create(ctx context.Context, name, description string, ke
 // It looks up the key by its 8-char prefix then compares the full hash.
 func (s *APIKeyService) Validate(ctx context.Context, rawKey string) (string, error) {
 	parts := strings.SplitN(rawKey, "_", 2)
-	if len(parts) != 2 || parts[0] != s.prefix {
+	if len(parts) != 2 || parts[0] != s.prefix || len(rawKey) < 8 {
 		return "", errors.ErrAPIKeyInvalid
 	}
 
