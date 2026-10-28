@@ -171,17 +171,29 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	tenantService := tenantSvc.New(mongo)
 
 	// ── SMS / WhatsApp ────────────────────────────────────────────────────────
-	smsSender     := sms.New(sms.Config{
-		AccountSID:   cfg.Twilio.AccountSID,
-		AuthToken:    cfg.Twilio.AuthToken,
-		FromSMS:      cfg.Twilio.FromSMS,
-		FromWhatsApp: cfg.Twilio.FromWhatsApp,
+	smsSender := sms.New(sms.Config{
+		AccountSID:      cfg.Twilio.AccountSID,
+		AuthToken:       cfg.Twilio.AuthToken,
+		FromSMS:         cfg.Twilio.FromSMS,
+		FromWhatsApp:    cfg.Twilio.FromWhatsApp,
+		SMSEnabled:      cfg.Notification.SMSEnabled,
+		WhatsAppEnabled: cfg.Notification.WhatsAppEnabled,
+		Logger:          log,
 	})
 	mobileService := mobileSvc.New(mongo, rdb, smsSender, hasher, actSvc)
 
 	// ── Firebase FCM ──────────────────────────────────────────────────────────
+	// Live only when FCM_ENABLED is set AND credentials are present; otherwise
+	// push is off (a nil sender), keeping dev/tests offline by default.
 	var fcmSender *notifSvc.FCMSender
-	if cfg.Firebase.CredentialsFile != "" {
+	switch {
+	case !cfg.Notification.FCMEnabled:
+		if cfg.Firebase.CredentialsFile != "" {
+			log.Info("app: FCM disabled (FCM_ENABLED=false) — push simulated/off")
+		}
+	case cfg.Firebase.CredentialsFile == "":
+		log.Info("app: FCM enabled but no credentials — push simulated/off")
+	default:
 		fcmSender, err = notifSvc.NewFCMSender(cfg.Firebase.CredentialsFile, cfg.Firebase.AndroidChannelID)
 		if err != nil {
 			log.Warn("app: Firebase FCM init failed — push disabled", zap.Error(err))

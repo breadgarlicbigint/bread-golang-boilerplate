@@ -27,6 +27,13 @@ changes ported back from downstream projects and other upstream improvements.
   at the limit is admitted again after the window elapses (was blocked
   indefinitely).
 
+### Changed
+- Outbound channels (SMS, WhatsApp, FCM) now send only when their explicit
+  `*_ENABLED` flag is set **and** credentials are present; otherwise they are
+  simulated (logged, nothing sent). Default dev/tests run fully offline. Set
+  `SMS_ENABLED`/`WHATSAPP_ENABLED`/`FCM_ENABLED` in an environment that should
+  actually deliver.
+
 ### Changed (breaking)
 - **`pkg/storage`**: `Storage.Upload(...)` now returns the **storage key**,
   not a public URL. Persist the key and resolve it to a URL at read time with

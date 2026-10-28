@@ -448,8 +448,9 @@ optional integrations — each is disabled gracefully if unconfigured:
 | `STORAGE_DRIVER` (`local` \| `s3`) | File storage backend — local filesystem (default, offline) or AWS S3; `STORAGE_LOCAL_DIR`/`STORAGE_LOCAL_BASE_URL`/`UPLOAD_MAX_BYTES` |
 | `MONGO_DEPLOYMENT` (`auto` \| `standalone` \| `replicaset` \| `sharded`) | Transaction availability — `auto` probes the topology at connect; `standalone` runs non-transactional sessions |
 | `AWS_ACCESS_KEY_ID` | SES email (if `MAIL_DRIVER=ses`) + S3 storage (if `STORAGE_DRIVER=s3`) |
-| `TWILIO_ACCOUNT_SID` | SMS + WhatsApp OTP delivery |
-| `FIREBASE_CREDENTIALS_FILE` | FCM push notifications |
+| `TWILIO_ACCOUNT_SID` | SMS + WhatsApp OTP delivery (also needs `SMS_ENABLED` / `WHATSAPP_ENABLED`) |
+| `FIREBASE_CREDENTIALS_FILE` | FCM push notifications (also needs `FCM_ENABLED`) |
+| `SMS_ENABLED` / `WHATSAPP_ENABLED` / `FCM_ENABLED` / `SMTP_ENABLED` | Per-channel send switches — a channel is live only with its flag set **and** credentials present; otherwise it's simulated (logged, nothing sent), so dev and tests run offline |
 | `GITHUB_CLIENT_ID` | GitHub SSO |
 | `APPLE_CLIENT_ID` | Sign in with Apple |
 | `SENTRY_DSN` | Error tracking |

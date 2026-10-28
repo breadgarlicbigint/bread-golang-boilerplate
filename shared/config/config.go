@@ -475,7 +475,11 @@ func Load() (*Config, error) {
 		BaseDomain: v.GetString("BASE_DOMAIN"),
 	}
 	cfg.Notification = NotificationConfig{
-		Enabled: v.GetBool("NOTIFICATION_ENABLED"),
+		Enabled:         v.GetBool("NOTIFICATION_ENABLED"),
+		WhatsAppEnabled: v.GetBool("WHATSAPP_ENABLED"),
+		SMSEnabled:      v.GetBool("SMS_ENABLED"),
+		FCMEnabled:      v.GetBool("FCM_ENABLED"),
+		SMTPEnabled:     v.GetBool("SMTP_ENABLED"),
 	}
 
 	return cfg, nil
@@ -525,6 +529,14 @@ type I18nConfig struct {
 	LocalesDir  string `mapstructure:"LOCALES_DIR"`
 }
 
+// NotificationConfig gates outbound transports. Each channel is LIVE only when
+// its *_ENABLED flag is set AND its credentials are present; otherwise the
+// sender logs a "(sim)" line and sends nothing — so default dev and the whole
+// test suite run fully offline (zero credentials ⇒ no external send).
 type NotificationConfig struct {
-	Enabled bool `mapstructure:"NOTIFICATION_ENABLED"`
+	Enabled         bool `mapstructure:"NOTIFICATION_ENABLED"`
+	WhatsAppEnabled bool `mapstructure:"WHATSAPP_ENABLED"` // Twilio WhatsApp
+	SMSEnabled      bool `mapstructure:"SMS_ENABLED"`      // Twilio SMS
+	FCMEnabled      bool `mapstructure:"FCM_ENABLED"`      // Firebase push
+	SMTPEnabled     bool `mapstructure:"SMTP_ENABLED"`     // SMTP email transport
 }
