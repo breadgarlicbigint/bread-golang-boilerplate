@@ -48,12 +48,20 @@ type AppConfig struct {
 }
 
 type MongoConfig struct {
-	URI      string        `mapstructure:"MONGO_URI"`
-	DBName   string        `mapstructure:"MONGO_DB_NAME"`
-	IDType   string        `mapstructure:"MONGO_ID_TYPE"` // "uuid" (default) or "objectid"
-	PoolMin  uint64        `mapstructure:"MONGO_POOL_MIN"`
-	PoolMax  uint64        `mapstructure:"MONGO_POOL_MAX"`
-	Timeout  time.Duration `mapstructure:"MONGO_TIMEOUT"`
+	URI     string        `mapstructure:"MONGO_URI"`
+	DBName  string        `mapstructure:"MONGO_DB_NAME"`
+	IDType  string        `mapstructure:"MONGO_ID_TYPE"` // "uuid" (default) or "objectid"
+	PoolMin uint64        `mapstructure:"MONGO_POOL_MIN"`
+	PoolMax uint64        `mapstructure:"MONGO_POOL_MAX"`
+	Timeout time.Duration `mapstructure:"MONGO_TIMEOUT"`
+	// Deployment selects whether multi-document TRANSACTIONS are available:
+	// "replicaset" (or "sharded") uses them, "standalone" does not, and "auto"
+	// (the default) probes the topology at connect time. A standalone mongod
+	// REFUSES transactions outright ("Transaction numbers are only allowed on a
+	// replica set member or mongos"), so a deployment that cannot run a replica
+	// set needs this rather than failing deep inside the first transactional
+	// write. See database.Transactor.
+	Deployment string `mapstructure:"MONGO_DEPLOYMENT"`
 }
 
 type RedisConfig struct {
@@ -229,7 +237,8 @@ func Load() (*Config, error) {
 	v.SetDefault("MONGO_DB_NAME", "bread_boilerplate")
 	v.SetDefault("MONGO_POOL_MIN", 2)
 	v.SetDefault("MONGO_POOL_MAX", 10)
-	v.SetDefault("MONGO_TIMEOUT", "30s") // 30s for replica set election during startup
+	v.SetDefault("MONGO_TIMEOUT", "30s")     // 30s for replica set election during startup
+	v.SetDefault("MONGO_DEPLOYMENT", "auto") // auto | standalone | replicaset | sharded
 	v.SetDefault("REDIS_HOST", "localhost")
 	v.SetDefault("REDIS_PORT", "6379")
 	v.SetDefault("REDIS_DB", 0)
@@ -287,12 +296,13 @@ func Load() (*Config, error) {
 		URL:     v.GetString("APP_URL"),
 	}
 	cfg.Mongo = MongoConfig{
-		URI:     v.GetString("MONGO_URI"),
-		DBName:  v.GetString("MONGO_DB_NAME"),
-		IDType:  v.GetString("MONGO_ID_TYPE"),
-		PoolMin: v.GetUint64("MONGO_POOL_MIN"),
-		PoolMax: v.GetUint64("MONGO_POOL_MAX"),
-		Timeout: v.GetDuration("MONGO_TIMEOUT"),
+		URI:        v.GetString("MONGO_URI"),
+		DBName:     v.GetString("MONGO_DB_NAME"),
+		IDType:     v.GetString("MONGO_ID_TYPE"),
+		PoolMin:    v.GetUint64("MONGO_POOL_MIN"),
+		PoolMax:    v.GetUint64("MONGO_POOL_MAX"),
+		Timeout:    v.GetDuration("MONGO_TIMEOUT"),
+		Deployment: v.GetString("MONGO_DEPLOYMENT"),
 	}
 	cfg.Redis = RedisConfig{
 		Host:     v.GetString("REDIS_HOST"),
