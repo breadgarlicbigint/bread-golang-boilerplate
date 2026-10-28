@@ -54,10 +54,23 @@ type ErrorDetail struct {
 }
 
 // ErrorEnvelope wraps errors.
+//
+// Code is the AppError's stable machine-readable identifier. It is a WIRE
+// identifier in the same category as errors[].field and enum values — the client
+// branches on it and never renders it, so it is deliberately not translated. It
+// exists because status alone is not always a sufficient discriminator: one
+// endpoint can answer two different 409s, and the message is translated for the
+// caller's x-custom-lang, so matching on the message text works in English and
+// silently stops working in another locale.
+//
+// Details is an optional structured payload (see errors.AppError.Details).
+// Both are omitempty, so an error that sets neither is byte-identical to before.
 type ErrorEnvelope struct {
 	StatusCode int           `json:"statusCode"`
+	Code       string        `json:"code,omitempty"`
 	Message    string        `json:"message"`
 	Errors     []ErrorDetail `json:"errors,omitempty"`
+	Details    any           `json:"details,omitempty"`
 	Timestamp  string        `json:"timestamp"`
 	Path       string        `json:"path"`
 	RequestID  string        `json:"requestId"`
@@ -115,11 +128,27 @@ func NoContent(c *gin.Context) {
 // ── Error helpers ─────────────────────────────────────────────────────────────
 
 func Error(c *gin.Context, status int, message string, errs ...ErrorDetail) {
+	ErrorWithCode(c, status, "", message, errs...)
+}
+
+// ErrorWithCode is Error plus the machine-readable code (see ErrorEnvelope).
+// HandleAppError uses it so every domain error carries its AppError.Code;
+// hand-written responses keep using Error and simply omit the field.
+func ErrorWithCode(c *gin.Context, status int, code, message string, errs ...ErrorDetail) {
+	ErrorWithDetails(c, status, code, message, nil, errs...)
+}
+
+// ErrorWithDetails is ErrorWithCode plus a structured payload a refusal carries
+// (see errors.AppError.Details). A separate function rather than another
+// parameter on the one above, so no existing caller changes.
+func ErrorWithDetails(c *gin.Context, status int, code, message string, details any, errs ...ErrorDetail) {
 	c.Set("errorMessage", message)
 	c.AbortWithStatusJSON(status, ErrorEnvelope{
 		StatusCode: status,
+		Code:       code,
 		Message:    message,
 		Errors:     errs,
+		Details:    details,
 		Timestamp:  now(),
 		Path:       c.FullPath(),
 		RequestID:  requestID(c),

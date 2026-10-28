@@ -15,6 +15,37 @@ type AppError struct {
 	Key    string `json:"-"`
 	Status int    `json:"-"`
 	Err    error  `json:"-"`
+	// Field is the DTO's JSON tag name this error is attributable to (e.g.
+	// "email", "username") — empty for errors not tied to a single field.
+	// HandleAppError forwards it as a response.ErrorDetail so a client renders
+	// it under the right input instead of a general banner.
+	Field string `json:"-"`
+	// Details is an optional structured payload carried alongside the error —
+	// anything a client needs to ACT on the refusal rather than only report it
+	// (e.g. where a record is still referenced, which choices to offer). It is
+	// forwarded onto the error envelope as `details`, omitempty, so every error
+	// that sets none of this stays byte-identical. Keep it to wire values and
+	// enums, never prose or an identifier rendered as text.
+	Details any `json:"-"`
+}
+
+// WithField returns a copy of e with Field set. Sentinel errors below are
+// shared package-level vars, so this must copy rather than mutate in place —
+// otherwise concurrent requests attaching different fields to the same sentinel
+// (e.g. ErrConflict) would race.
+func (e *AppError) WithField(field string) *AppError {
+	cp := *e
+	cp.Field = field
+	return &cp
+}
+
+// WithDetails returns a copy of e carrying a structured payload (see Details).
+// A copy for the same reason WithField copies: the sentinels are shared vars, so
+// mutating in place would let one request's payload surface on another's error.
+func (e *AppError) WithDetails(details any) *AppError {
+	cp := *e
+	cp.Details = details
+	return &cp
 }
 
 func (e *AppError) Error() string { return e.Message }
