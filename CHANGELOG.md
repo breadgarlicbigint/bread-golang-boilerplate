@@ -5,6 +5,35 @@ changes ported back from downstream projects and other upstream improvements.
 
 ## Unreleased
 
+### Added (RBAC / multi-tenant — B1–B3)
+- JWT now carries `tid` (tenant) and `perms` (flattened permission set) claims;
+  `shared/middleware` projects them into context (`CtxTenantID` reuses the
+  tenant middleware's `tenantId` key) and `RequirePermission(...)` /
+  `RequireTenant()` gate routes on them. **The tenant comes from the token,
+  never from a header or body.**
+- Per-user `ExtraPermissions` / `RevokedPermissions` on the user record;
+  effective permissions = (role ∪ extras) − revoked, with a wildcard role never
+  subtracted from. Grants are validated (unknown slug / wildcard / same slug in
+  both lists are refused), a non-wildcard admin may assign only an allowlisted
+  role, and nobody may change their own role/permissions (even via `/me`).
+- Idempotent system-role seed (`role/repository.EnsureRoles`, run at startup)
+  with permission sets; `GET /v1/roles/assignable` for the create-user dropdown.
+  Generic example permissions: `users:read`, `users:write`, `audit:read`,
+  `settings:manage`.
+- Tenant-bound login: optional `tenantSlug` on `POST /v1/auth/login`; when
+  present the account must belong to that tenant, else a single
+  `ErrTenantMismatch` (unknown slug / another tenant's slug / platform user are
+  indistinguishable, so login is not a tenant-enumeration oracle).
+
+### Changed (breaking — B1)
+- **`pkg/jwt`**: `IssueAccess`/`IssueRefresh` now take
+  `(userID, sessionID, role, tenantID string, permissions []string)`. Callers
+  issuing tokens must pass the tenant id ("" for a platform user) and the
+  flattened permission set.
+- **`modules/user/service`**: `UserService.Create`/`Update` take an `Actor`
+  (the acting user's id + wildcard status) for the self-change and
+  assignable-role guards; wire the role resolver with `WithRoles`.
+
 ### Added
 - `MONGO_DEPLOYMENT=auto|standalone|replicaset|sharded` (default `auto`):
   detects whether multi-document transactions are available and runs

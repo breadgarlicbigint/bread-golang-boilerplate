@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
+	roleentity "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/entity"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/dto"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/entity"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/email"
@@ -12,6 +12,7 @@ import (
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/pagination"
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.uber.org/zap"
 )
@@ -39,8 +40,22 @@ type EmailQueue interface {
 	EnqueueEmail(to, subject, html, text string) error
 }
 
+// RoleResolver resolves a role id to its slug, for the assignable-role guard.
+type RoleResolver interface {
+	SlugByID(ctx context.Context, id uuid.UUID) (string, error)
+}
+
+// Actor is who is performing a user-management action, for the self-change and
+// assignable-role guards. HasWildcard is true for a holder of the "*"
+// permission (a platform/super admin), who may assign any role.
+type Actor struct {
+	ID          string
+	HasWildcard bool
+}
+
 type UserService struct {
 	repo        UserRepo
+	roles       RoleResolver
 	hasher      *hash.Hasher
 	cfg         config.AuthConfig
 	localMailer *email.LocalizedMailer
@@ -53,7 +68,56 @@ func New(repo UserRepo, hasher *hash.Hasher, cfg config.AuthConfig, localMailer 
 	return &UserService{repo: repo, hasher: hasher, cfg: cfg, localMailer: localMailer, emailQueue: emailQueue, appURL: appURL, log: log}
 }
 
-func (s *UserService) Create(ctx context.Context, lang string, req dto.CreateUserRequest) (*entity.User, error) {
+// WithRoles attaches the role resolver used by the assignable-role guard.
+// Optional so the constructor and existing callers stay unchanged; without it a
+// non-wildcard actor cannot assign any role (fails closed).
+func (s *UserService) WithRoles(r RoleResolver) *UserService {
+	s.roles = r
+	return s
+}
+
+// validatePermissionGrant enforces the per-user grant rules: every slug must be
+// grantable (known, non-wildcard), and no slug may appear in both the grant and
+// withdrawal lists (which is ambiguous, not silently ordered).
+func validatePermissionGrant(extra, revoked []string) error {
+	for _, p := range append(append([]string{}, extra...), revoked...) {
+		if !roleentity.IsGrantablePermission(p) {
+			return errors.ErrInvalidPermissionGrant
+		}
+	}
+	ex := make(map[string]struct{}, len(extra))
+	for _, p := range extra {
+		ex[p] = struct{}{}
+	}
+	for _, p := range revoked {
+		if _, both := ex[p]; both {
+			return errors.ErrInvalidPermissionGrant
+		}
+	}
+	return nil
+}
+
+// guardAssignableRole blocks a non-wildcard actor from assigning a role outside
+// the allowlisted set — otherwise an admin could post the wildcard role's id and
+// mint a wildcard user. A wildcard actor may assign anything.
+func (s *UserService) guardAssignableRole(ctx context.Context, actor Actor, roleID uuid.UUID) error {
+	if actor.HasWildcard {
+		return nil
+	}
+	if s.roles == nil {
+		return errors.ErrRoleNotAssignable
+	}
+	slug, err := s.roles.SlugByID(ctx, roleID)
+	if err != nil {
+		return errors.ErrRoleNotFound
+	}
+	if !roleentity.IsAssignableTenantRole(roleentity.RoleSlug(slug)) {
+		return errors.ErrRoleNotAssignable
+	}
+	return nil
+}
+
+func (s *UserService) Create(ctx context.Context, lang string, req dto.CreateUserRequest, actor Actor) (*entity.User, error) {
 	emailTaken, err := s.repo.ExistsByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
@@ -79,18 +143,26 @@ func (s *UserService) Create(ctx context.Context, lang string, req dto.CreateUse
 	if err != nil {
 		return nil, errors.ErrBadRequest
 	}
+	if err := s.guardAssignableRole(ctx, actor, roleID); err != nil {
+		return nil, err
+	}
+	if err := validatePermissionGrant(req.ExtraPermissions, req.RevokedPermissions); err != nil {
+		return nil, err
+	}
 
 	u := &entity.User{
-		Email:         req.Email,
-		Username:      req.Username,
-		PasswordHash:  passwordHash,
-		FirstName:     req.FirstName,
-		LastName:      req.LastName,
-		PhoneNumber:   req.PhoneNumber,
-		RoleID:        roleID,
-		Status:        entity.UserStatusActive,
-		EmailVerified: false,
-		NotifSettings: entity.DefaultNotifSettings(),
+		Email:              req.Email,
+		Username:           req.Username,
+		PasswordHash:       passwordHash,
+		FirstName:          req.FirstName,
+		LastName:           req.LastName,
+		PhoneNumber:        req.PhoneNumber,
+		RoleID:             roleID,
+		ExtraPermissions:   req.ExtraPermissions,
+		RevokedPermissions: req.RevokedPermissions,
+		Status:             entity.UserStatusActive,
+		EmailVerified:      false,
+		NotifSettings:      entity.DefaultNotifSettings(),
 	}
 
 	if err := s.repo.Create(ctx, u); err != nil {
@@ -144,10 +216,18 @@ func (s *UserService) List(ctx context.Context, q pagination.Query) ([]*entity.U
 	return s.repo.List(ctx, q)
 }
 
-func (s *UserService) Update(ctx context.Context, id string, req dto.UpdateUserRequest) (*entity.User, error) {
+func (s *UserService) Update(ctx context.Context, id string, req dto.UpdateUserRequest, actor Actor) (*entity.User, error) {
 	u, err := s.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+
+	// Access changes (role / permissions) are guarded. Nobody changes their OWN
+	// role or permissions — on any route, including /me — so a user cannot
+	// self-elevate. A non-wildcard admin may assign only an allowlisted role.
+	changesAccess := req.RoleID != "" || req.ExtraPermissions != nil || req.RevokedPermissions != nil
+	if changesAccess && actor.ID == u.ID.String() {
+		return nil, errors.ErrCannotChangeOwnAccess
 	}
 
 	fields := bson.M{}
@@ -165,6 +245,31 @@ func (s *UserService) Update(ctx context.Context, id string, req dto.UpdateUserR
 	}
 	if req.Gender != "" {
 		fields["gender"] = req.Gender
+	}
+	if req.RoleID != "" {
+		roleID, err := uuid.Parse(req.RoleID)
+		if err != nil {
+			return nil, errors.ErrBadRequest
+		}
+		if err := s.guardAssignableRole(ctx, actor, roleID); err != nil {
+			return nil, err
+		}
+		fields["roleId"] = roleID
+	}
+	if req.ExtraPermissions != nil || req.RevokedPermissions != nil {
+		extra := u.ExtraPermissions
+		if req.ExtraPermissions != nil {
+			extra = *req.ExtraPermissions
+		}
+		revoked := u.RevokedPermissions
+		if req.RevokedPermissions != nil {
+			revoked = *req.RevokedPermissions
+		}
+		if err := validatePermissionGrant(extra, revoked); err != nil {
+			return nil, err
+		}
+		fields["extraPermissions"] = extra
+		fields["revokedPermissions"] = revoked
 	}
 
 	if err := s.repo.Update(ctx, u.ID, fields); err != nil {

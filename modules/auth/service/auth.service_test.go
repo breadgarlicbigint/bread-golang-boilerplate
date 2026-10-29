@@ -132,7 +132,7 @@ func TestJWT_IssueAndParse(t *testing.T) {
 	sessionID := "test-session-123"
 	role := "admin"
 
-	token, exp, err := jwtMgr.IssueAccess(userID, sessionID, role)
+	token, exp, err := jwtMgr.IssueAccess(userID, sessionID, role, "", nil)
 	if err != nil {
 		t.Fatal("issue access token:", err)
 	}

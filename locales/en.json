@@ -45,7 +45,10 @@
     "missingAuthHeader": "Missing or malformed Authorization header",
     "invalidAccessToken": "Invalid or expired access token",
     "insufficientRole": "Insufficient role",
-    "ownResourceOnly": "You can only access your own resources"
+    "ownResourceOnly": "You can only access your own resources",
+    "insufficientPermission": "You do not have permission to perform this action",
+    "tenantScopeRequired": "This action requires a tenant-scoped account",
+    "tenantMismatch": "These credentials are not valid for this tenant"
   },
   "user": {
     "fetchSuccess": "User fetched",
@@ -136,7 +139,16 @@
   },
   "role": {
     "listSuccess": "Roles fetched",
-    "notFound": "Role not found"
+    "notFound": "Role not found",
+    "notAssignable": "You may not assign this role",
+    "invalidPermissionGrant": "Invalid permission grant",
+    "cannotChangeOwnAccess": "You cannot change your own role or permissions"
+  },
+  "permissions": {
+    "users:read": "View users",
+    "users:write": "Manage users",
+    "audit:read": "View audit trail",
+    "settings:manage": "Manage settings"
   },
   "featureFlag": {
     "disabled": "This feature is not enabled"
@@ -209,6 +221,9 @@
     "code": "Code",
     "command": "Command",
     "email": "Email address",
+    "extraPermissions": "Extra permissions",
+    "revokedPermissions": "Revoked permissions",
+    "tenantSlug": "Tenant",
     "firstName": "First name",
     "friendlyName": "Device name",
     "gender": "Gender",

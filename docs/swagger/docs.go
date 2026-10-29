@@ -1294,6 +1294,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/roles/assignable": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The roles a non-wildcard admin may assign (create-user dropdown)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roles"
+                ],
+                "summary": "List assignable roles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_role_dto.RoleResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/users": {
             "get": {
                 "security": [
@@ -1718,6 +1758,10 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string"
+                },
+                "tenantSlug": {
+                    "description": "TenantSlug optionally binds the login to a tenant: when present the account\nmust belong to that tenant, else ErrTenantMismatch. Absent grants nothing —\nthe JWT's tenant is read from the user record, never from the request.",
+                    "type": "string"
                 }
             }
         },
@@ -2126,6 +2170,13 @@ const docTemplate = `{
                 "email": {
                     "type": "string"
                 },
+                "extraPermissions": {
+                    "description": "ExtraPermissions grants and RevokedPermissions withdraws per-action\npermissions for this one user, layered on top of the role. Each slug must\nbe grantable; a slug in both is refused; the wildcard is never grantable.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "firstName": {
                     "type": "string",
                     "maxLength": 50,
@@ -2143,6 +2194,12 @@ const docTemplate = `{
                 "phoneNumber": {
                     "type": "string"
                 },
+                "revokedPermissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "roleId": {
                     "type": "string"
                 },
@@ -2156,6 +2213,12 @@ const docTemplate = `{
         "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.UpdateUserRequest": {
             "type": "object",
             "properties": {
+                "extraPermissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "firstName": {
                     "type": "string",
                     "maxLength": 50,
@@ -2178,6 +2241,16 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "profilePicture": {
+                    "type": "string"
+                },
+                "revokedPermissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "roleId": {
+                    "description": "RoleID / ExtraPermissions / RevokedPermissions change a user's access and\nare admin-only. They are guarded server-side: nobody may change their OWN\nrole or permissions (even via /me), and a non-wildcard admin may assign\nonly an allowlisted role. Pointers distinguish \"not provided\" from \"clear\".",
                     "type": "string"
                 }
             }

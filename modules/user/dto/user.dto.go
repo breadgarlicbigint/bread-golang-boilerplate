@@ -16,6 +16,11 @@ type CreateUserRequest struct {
 	LastName    string `json:"lastName"    validate:"required,min=1,max=50"`
 	PhoneNumber string `json:"phoneNumber" validate:"omitempty,e164"`
 	RoleID      string `json:"roleId"      validate:"required"`
+	// ExtraPermissions grants and RevokedPermissions withdraws per-action
+	// permissions for this one user, layered on top of the role. Each slug must
+	// be grantable; a slug in both is refused; the wildcard is never grantable.
+	ExtraPermissions   []string `json:"extraPermissions"   validate:"omitempty"`
+	RevokedPermissions []string `json:"revokedPermissions" validate:"omitempty"`
 }
 
 type UpdateUserRequest struct {
@@ -24,6 +29,13 @@ type UpdateUserRequest struct {
 	PhoneNumber    string `json:"phoneNumber"    validate:"omitempty,e164"`
 	ProfilePicture string `json:"profilePicture" validate:"omitempty,url"`
 	Gender         string `json:"gender"         validate:"omitempty,oneof=male female other"`
+	// RoleID / ExtraPermissions / RevokedPermissions change a user's access and
+	// are admin-only. They are guarded server-side: nobody may change their OWN
+	// role or permissions (even via /me), and a non-wildcard admin may assign
+	// only an allowlisted role. Pointers distinguish "not provided" from "clear".
+	RoleID             string    `json:"roleId"             validate:"omitempty"`
+	ExtraPermissions   *[]string `json:"extraPermissions"   validate:"omitempty"`
+	RevokedPermissions *[]string `json:"revokedPermissions" validate:"omitempty"`
 }
 
 type ChangePasswordRequest struct {

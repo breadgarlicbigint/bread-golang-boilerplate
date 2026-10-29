@@ -5,6 +5,10 @@ package dto
 type LoginRequest struct {
 	Email    string `json:"email"    validate:"required,email"`
 	Password string `json:"password" validate:"required"`
+	// TenantSlug optionally binds the login to a tenant: when present the account
+	// must belong to that tenant, else ErrTenantMismatch. Absent grants nothing —
+	// the JWT's tenant is read from the user record, never from the request.
+	TenantSlug string `json:"tenantSlug" validate:"omitempty"`
 }
 
 type LoginResponse struct {

@@ -10,6 +10,7 @@ import (
 // repository package (kept minimal so it's easy to fake in unit tests).
 type RoleRepo interface {
 	FindAll(ctx context.Context) ([]entity.Role, error)
+	ListAssignable(ctx context.Context) ([]entity.Role, error)
 }
 
 type RoleService struct {
@@ -23,4 +24,11 @@ func New(repo RoleRepo) *RoleService {
 // List returns every role, used to populate role-selection dropdowns.
 func (s *RoleService) List(ctx context.Context) ([]entity.Role, error) {
 	return s.repo.FindAll(ctx)
+}
+
+// ListAssignable returns only the roles a non-wildcard admin may assign (the
+// create-user dropdown). The authoritative check is still server-side at user
+// creation — this only shapes the UI.
+func (s *RoleService) ListAssignable(ctx context.Context) ([]entity.Role, error) {
+	return s.repo.ListAssignable(ctx)
 }

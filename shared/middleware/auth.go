@@ -18,6 +18,12 @@ const (
 	CtxSessionID = "sessionID"
 	CtxRole      = "userRole"
 	CtxClaims    = "jwtClaims"
+	// CtxTenantID and CtxPermissions are projected from the JWT (the
+	// authoritative tenant + RBAC set). CtxTenantID uses the same string key
+	// ("tenantId") the tenant middleware reads, so tenant-scoped repositories
+	// have a single source regardless of how the tenant was resolved.
+	CtxTenantID    = "tenantId"
+	CtxPermissions = "permissions"
 )
 
 // AuthJWTAccess validates the Bearer access token.
@@ -78,6 +84,10 @@ func authJWTAccess(jwtMgr *jwtpkg.Manager, sessions SessionStore, extractToken f
 		c.Set(CtxSessionID, claims.SessionID)
 		c.Set(CtxRole, claims.Role)
 		c.Set(CtxClaims, claims)
+		// Authoritative tenant + permissions from the token (never a client
+		// header). Empty tenant ⇒ a platform-scoped user (no tenant).
+		c.Set(CtxTenantID, claims.TenantID)
+		c.Set(CtxPermissions, claims.Permissions)
 		c.Next()
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
@@ -140,7 +141,13 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	uRepo       := userRepo.New(mongo)
 	rRepo       := roleRepo.New(mongo)
 	rSvc        := roleSvc.New(rRepo)
-	uSvc        := userSvc.New(uRepo, hasher, cfg.Auth, localMailer, jobQueue, cfg.App.URL, log)
+	uSvc        := userSvc.New(uRepo, hasher, cfg.Auth, localMailer, jobQueue, cfg.App.URL, log).WithRoles(rRepo)
+	// Idempotently ensure the system roles + their permission sets exist (safe on
+	// every boot). A warning, not a fatal: a transient DB hiccup here must not
+	// stop the API from starting.
+	if err := rRepo.EnsureRoles(context.Background()); err != nil {
+		log.Warn("app: ensure system roles failed", zap.Error(err))
+	}
 	apiKeySvc   := apikeySvc.New(mongo, hasher, cfg.APIKey.Prefix)
 	actSvc      := activitySvc.New(mongo)
 	authService := authSvc.New(uRepo, uSvc, rRepo, jwtMgr, hasher, rdb, *cfg, log, localMailer)
@@ -169,6 +176,10 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 
 	// ── Multi-tenant ──────────────────────────────────────────────────────────
 	tenantService := tenantSvc.New(mongo)
+	// Tenant-bound login: a login carrying a tenantSlug must match the account's
+	// tenant (the slug resolves to a tenant id here). Attached after construction
+	// so the auth constructor stays unchanged.
+	authService.WithTenants(tenantSlugResolver{svc: tenantService})
 
 	// ── SMS / WhatsApp ────────────────────────────────────────────────────────
 	smsSender := sms.New(sms.Config{
@@ -487,6 +498,21 @@ type userSvcAdapter struct{ svc *userSvc.UserService }
 
 func (u *userSvcAdapter) GetByID(ctx context.Context, id string) (*userentity.User, error) {
 	return u.svc.GetByID(ctx, id)
+}
+
+// tenantSlugResolver adapts the tenant service to auth's TenantResolver: it maps
+// a login's tenant slug to the tenant id the account is checked against.
+type tenantSlugResolver struct{ svc *tenantSvc.TenantService }
+
+func (r tenantSlugResolver) TenantIDBySlug(ctx context.Context, slug string) (uuid.UUID, error) {
+	t, err := r.svc.FindBySlug(ctx, slug)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if t == nil {
+		return uuid.Nil, fmt.Errorf("tenant %q not found", slug)
+	}
+	return t.ID, nil
 }
 
 // asynqPublisherAdapter adapts *worker.Client — whose Enqueue takes a

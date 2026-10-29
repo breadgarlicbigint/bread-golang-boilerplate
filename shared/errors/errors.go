@@ -87,6 +87,11 @@ var (
 
 	// Auth
 	ErrInvalidCredentials = NewI18n(http.StatusUnauthorized, "INVALID_CREDENTIALS", "auth.invalidCredentials", "Invalid email or password")
+	// ErrTenantMismatch covers every way a login's tenant slug can be wrong —
+	// unknown slug, a real slug belonging to another tenant, or a platform user
+	// supplying one at all. Deliberately ONE error for all three: distinguishing
+	// them would make login an oracle for which tenant an email belongs to.
+	ErrTenantMismatch = NewI18n(http.StatusUnauthorized, "TENANT_MISMATCH", "auth.tenantMismatch", "These credentials are not valid for this tenant")
 	ErrAccountLocked      = NewI18n(http.StatusUnauthorized, "ACCOUNT_LOCKED", "auth.accountLocked", "Account is temporarily locked")
 	ErrTokenExpired       = NewI18n(http.StatusUnauthorized, "TOKEN_EXPIRED", "auth.tokenExpired", "Token has expired")
 	ErrTokenInvalid       = NewI18n(http.StatusUnauthorized, "TOKEN_INVALID", "auth.tokenInvalid", "Token is invalid")
@@ -107,6 +112,16 @@ var (
 
 	// Role
 	ErrRoleNotFound = NewI18n(http.StatusNotFound, "ROLE_NOT_FOUND", "role.notFound", "Role not found")
+	// ErrRoleNotAssignable: a non-wildcard admin tried to assign a role outside
+	// the allowlisted assignable set (e.g. the admin/wildcard role itself).
+	ErrRoleNotAssignable = NewI18n(http.StatusForbidden, "ROLE_NOT_ASSIGNABLE", "role.notAssignable", "You may not assign this role")
+	// ErrInvalidPermissionGrant: a per-user permission grant/withdrawal named an
+	// unknown slug, the wildcard, or the same slug in both the grant and
+	// withdrawal lists.
+	ErrInvalidPermissionGrant = NewI18n(http.StatusUnprocessableEntity, "INVALID_PERMISSION_GRANT", "role.invalidPermissionGrant", "Invalid permission grant")
+	// ErrCannotChangeOwnAccess: nobody changes their own role or permissions, on
+	// any route — a self-elevation guard.
+	ErrCannotChangeOwnAccess = NewI18n(http.StatusForbidden, "CANNOT_CHANGE_OWN_ACCESS", "role.cannotChangeOwnAccess", "You cannot change your own role or permissions")
 
 	// Feature flag
 	ErrFeatureDisabled = NewI18n(http.StatusForbidden, "FEATURE_DISABLED", "featureFlag.disabled", "This feature is not enabled")

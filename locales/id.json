@@ -45,7 +45,10 @@
     "missingAuthHeader": "Header Authorization tidak ada atau tidak valid",
     "invalidAccessToken": "Token akses tidak valid atau telah kedaluwarsa",
     "insufficientRole": "Peran tidak mencukupi",
-    "ownResourceOnly": "Anda hanya dapat mengakses sumber daya milik Anda sendiri"
+    "ownResourceOnly": "Anda hanya dapat mengakses sumber daya milik Anda sendiri",
+    "insufficientPermission": "Anda tidak memiliki izin untuk melakukan tindakan ini",
+    "tenantScopeRequired": "Tindakan ini memerlukan akun dalam lingkup tenant",
+    "tenantMismatch": "Kredensial ini tidak berlaku untuk tenant ini"
   },
   "user": {
     "fetchSuccess": "Pengguna berhasil diambil",

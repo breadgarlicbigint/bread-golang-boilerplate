@@ -11,6 +11,7 @@ import (
 
 type RoleSvc interface {
 	List(ctx context.Context) ([]entity.Role, error)
+	ListAssignable(ctx context.Context) ([]entity.Role, error)
 }
 
 type RoleHandler struct {
@@ -25,6 +26,30 @@ func New(svc RoleSvc) *RoleHandler {
 func (h *RoleHandler) RegisterRoutes(rg *gin.RouterGroup, extraMw ...gin.HandlerFunc) {
 	roles := rg.Group("/roles", extraMw...)
 	roles.GET("", h.List)
+	roles.GET("/assignable", h.ListAssignable)
+}
+
+// ListAssignable godoc
+// @Summary     List assignable roles
+// @Description The roles a non-wildcard admin may assign (create-user dropdown)
+// @Tags        roles
+// @Security    BearerAuth
+// @Produce     json
+// @Success     200 {array} dto.RoleResponse
+// @Failure     401 {object} response.ErrorEnvelope
+// @Failure     403 {object} response.ErrorEnvelope
+// @Router      /v1/roles/assignable [get]
+func (h *RoleHandler) ListAssignable(c *gin.Context) {
+	roles, err := h.svc.ListAssignable(c.Request.Context())
+	if err != nil {
+		response.HandleAppError(c, err)
+		return
+	}
+	result := make([]dto.RoleResponse, 0, len(roles))
+	for _, r := range roles {
+		result = append(result, dto.FromEntity(r))
+	}
+	response.OKI18n(c, "role.listSuccess", result)
 }
 
 // List godoc
