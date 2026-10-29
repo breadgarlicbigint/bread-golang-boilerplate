@@ -156,6 +156,9 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	}
 	apiKeySvc := apikeySvc.New(mongo, hasher, cfg.APIKey.Prefix).WithAudit(auditService)
 	authService := authSvc.New(uRepo, uSvc, rRepo, jwtMgr, hasher, rdb, *cfg, log, localMailer)
+	// Account-lifecycle emails: the user service mints set-password links via the
+	// auth service's reset-token issuer (a port, so user doesn't import auth).
+	uSvc.WithResetTokens(authService)
 
 	// ── Social Auth ───────────────────────────────────────────────────────────
 	ghOAuth    := authSvc.NewGitHubOAuth(cfg.GitHub)

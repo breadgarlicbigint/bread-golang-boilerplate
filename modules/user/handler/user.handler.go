@@ -20,6 +20,8 @@ type UserSvc interface {
 	List(ctx context.Context, q pagination.Query) ([]*entity.User, int64, error)
 	Update(ctx context.Context, id string, req dto.UpdateUserRequest, actor usersvc.Actor) (*entity.User, error)
 	ChangePassword(ctx context.Context, id string, req dto.ChangePasswordRequest) error
+	SendSetPasswordLink(ctx context.Context, actor usersvc.Actor, lang, id string) error
+	ResetPassword(ctx context.Context, actor usersvc.Actor, lang, id, newPassword string, sendEmail bool) error
 	BlockUser(ctx context.Context, id, reason string) error
 	UnblockUser(ctx context.Context, id string) error
 	Delete(ctx context.Context, id string) error
@@ -48,6 +50,8 @@ func (h *UserHandler) RegisterRoutes(rg *gin.RouterGroup, authMw gin.HandlerFunc
 	admin.DELETE("/:id",     h.Delete)
 	admin.POST("/:id/block", h.Block)
 	admin.POST("/:id/unblock", h.Unblock)
+	admin.POST("/:id/send-set-password", h.SendSetPasswordLink)
+	admin.POST("/:id/reset-password", h.ResetPassword)
 
 	// Me routes — require auth only
 	me := rg.Group("/me", authMw)
@@ -215,6 +219,46 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	if err := h.svc.ChangePassword(c.Request.Context(), c.GetString(middleware.CtxUserID), req); err != nil {
+		response.HandleAppError(c, err)
+		return
+	}
+	response.OKI18n(c, "user.passwordChanged", nil)
+}
+
+// SendSetPasswordLink godoc
+// @Summary      Email a set-password link to a user (admin)
+// @Tags         users
+// @Security     BearerAuth
+// @Produce      json
+// @Param        id path string true "User ID"
+// @Success      200
+// @Router       /v1/users/{id}/send-set-password [post]
+func (h *UserHandler) SendSetPasswordLink(c *gin.Context) {
+	_, lang := pkgi18n.FromContext(c)
+	if err := h.svc.SendSetPasswordLink(c.Request.Context(), actorFrom(c), lang, c.Param("id")); err != nil {
+		response.HandleAppError(c, err)
+		return
+	}
+	response.OKI18n(c, "user.setPasswordLinkSent", nil)
+}
+
+// ResetPassword godoc
+// @Summary      Set a user's password directly (admin, opt-in)
+// @Tags         users
+// @Security     BearerAuth
+// @Accept       json
+// @Produce      json
+// @Param        id   path string true "User ID"
+// @Param        body body dto.AdminResetPasswordRequest true "New password"
+// @Success      200
+// @Router       /v1/users/{id}/reset-password [post]
+func (h *UserHandler) ResetPassword(c *gin.Context) {
+	var req dto.AdminResetPasswordRequest
+	if !validate.BindJSON(c, &req) {
+		return
+	}
+	_, lang := pkgi18n.FromContext(c)
+	if err := h.svc.ResetPassword(c.Request.Context(), actorFrom(c), lang, c.Param("id"), req.NewPassword, req.SendEmail); err != nil {
 		response.HandleAppError(c, err)
 		return
 	}

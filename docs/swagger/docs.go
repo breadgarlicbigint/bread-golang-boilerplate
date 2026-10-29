@@ -1710,6 +1710,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/users/{id}/reset-password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Set a user's password directly (admin, opt-in)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.AdminResetPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/users/{id}/send-set-password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Email a set-password link to a user (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/v1/users/{id}/unblock": {
             "post": {
                 "security": [
@@ -2229,6 +2301,21 @@ const docTemplate = `{
                 "RoleUser",
                 "RoleMember"
             ]
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.AdminResetPasswordRequest": {
+            "type": "object",
+            "required": [
+                "newPassword"
+            ],
+            "properties": {
+                "newPassword": {
+                    "type": "string",
+                    "minLength": 8
+                },
+                "sendEmail": {
+                    "type": "boolean"
+                }
+            }
         },
         "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.BlockUserRequest": {
             "type": "object",

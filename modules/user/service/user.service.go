@@ -56,6 +56,7 @@ type Actor struct {
 type UserService struct {
 	repo        UserRepo
 	roles       RoleResolver
+	resetTokens ResetTokenIssuer
 	hasher      *hash.Hasher
 	cfg         config.AuthConfig
 	localMailer *email.LocalizedMailer

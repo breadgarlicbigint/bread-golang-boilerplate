@@ -104,6 +104,16 @@ var (
 	ErrUsernameTaken     = NewI18n(http.StatusConflict, "USERNAME_TAKEN", "user.usernameTaken", "Username is already taken")
 	ErrInvalidPassword   = NewI18n(http.StatusBadRequest, "INVALID_PASSWORD", "user.invalidPassword", "Password does not meet requirements")
 	ErrPasswordSameAsOld = NewI18n(http.StatusBadRequest, "PASSWORD_SAME_AS_OLD", "user.passwordSameAsOld", "New password must be different from the current password")
+	// ErrAdminProtected refuses a reset/resend aimed at a wildcard (admin) user
+	// by a caller who is not themselves a wildcard holder — only a super admin
+	// may act on an admin's login.
+	ErrAdminProtected = NewI18n(http.StatusForbidden, "ADMIN_PROTECTED", "user.adminProtected", "Only a super admin can change an admin's login")
+	// ErrEmailUnavailable is returned BEFORE anything is written: an action that
+	// must email a link cannot proceed with no mailer, and must not half-happen.
+	ErrEmailUnavailable = NewI18n(http.StatusServiceUnavailable, "EMAIL_UNAVAILABLE", "user.emailUnavailable", "Email is not configured")
+	// ErrEmailQueueFailed means the write happened but the message could not be
+	// queued — reported so the operator knows to resend rather than assume done.
+	ErrEmailQueueFailed = NewI18n(http.StatusBadGateway, "EMAIL_QUEUE_FAILED", "user.emailQueueFailed", "The change was saved but the email could not be sent")
 
 	// API Key
 	ErrAPIKeyNotFound = NewI18n(http.StatusNotFound, "API_KEY_NOT_FOUND", "apiKey.notFound", "API key not found")

@@ -65,7 +65,11 @@
     "emailTaken": "Email sudah terdaftar",
     "usernameTaken": "Nama pengguna sudah digunakan",
     "invalidPassword": "Kata sandi tidak memenuhi persyaratan",
-    "passwordSameAsOld": "Kata sandi baru harus berbeda dari kata sandi saat ini"
+    "passwordSameAsOld": "Kata sandi baru harus berbeda dari kata sandi saat ini",
+    "setPasswordLinkSent": "Tautan atur kata sandi telah dikirim melalui email",
+    "adminProtected": "Hanya super admin yang dapat mengubah login seorang admin",
+    "emailUnavailable": "Email belum dikonfigurasi",
+    "emailQueueFailed": "Perubahan disimpan tetapi email tidak dapat dikirim"
   },
   "mobile": {
     "otpSent": "Kode verifikasi telah dikirim",

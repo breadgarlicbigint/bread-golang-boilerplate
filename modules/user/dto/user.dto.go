@@ -43,6 +43,14 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"newPassword" validate:"required,min=8"`
 }
 
+// AdminResetPasswordRequest is the opt-in direct reset (an admin setting a
+// password for another user). The default flow is a set-password link, which
+// takes no body. sendEmail=true notifies the user the password was changed.
+type AdminResetPasswordRequest struct {
+	NewPassword string `json:"newPassword" validate:"required,min=8"`
+	SendEmail   bool   `json:"sendEmail"`
+}
+
 type UpdateNotifSettingsRequest struct {
 	EmailEnabled bool `json:"emailEnabled"`
 	PushEnabled  bool `json:"pushEnabled"`
