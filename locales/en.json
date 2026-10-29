@@ -171,6 +171,9 @@
     "invalidDateFormat": "Invalid date format — use YYYY-MM-DD",
     "queryFailed": "Analytics query failed"
   },
+  "audit": {
+    "listSuccess": "Audit trail fetched"
+  },
   "health": {
     "healthy": "Service is healthy",
     "degraded": "Service is degraded",

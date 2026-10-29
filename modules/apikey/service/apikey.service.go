@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/apikey/entity"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/audit"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/database"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
@@ -34,12 +35,27 @@ type APIKeyService struct {
 	// prefix. A field so tests can exercise the re-roll without a live Mongo;
 	// New wires it to the CountDocuments query.
 	prefixTaken func(ctx context.Context, prefix8 string) (bool, error)
+	audit       audit.Recorder
 }
 
 func New(db *database.MongoDB, hasher *hash.Hasher, prefix string) *APIKeyService {
 	s := &APIKeyService{col: db.Collection(collection), hasher: hasher, prefix: prefix}
 	s.prefixTaken = s.prefixTakenInDB
 	return s
+}
+
+// WithAudit attaches the change recorder. Minting or revoking a key decides what
+// a machine may do, so both are HIGH-risk audited changes.
+func (s *APIKeyService) WithAudit(a audit.Recorder) *APIKeyService {
+	s.audit = a
+	return s
+}
+
+func (s *APIKeyService) snapshot(k *entity.APIKey) map[string]any {
+	return map[string]any{
+		"name": k.Name, "keyPrefix": k.KeyPrefix,
+		"type": string(k.Type), "isActive": k.IsActive,
+	}
 }
 
 func (s *APIKeyService) prefixTakenInDB(ctx context.Context, prefix8 string) (bool, error) {
@@ -106,6 +122,9 @@ func (s *APIKeyService) Create(ctx context.Context, name, description string, ke
 	if _, err := s.col.InsertOne(ctx, k); err != nil {
 		return "", nil, err
 	}
+	if s.audit != nil {
+		s.audit.Record(ctx, audit.New("apiKey.create", collection, k.ID.String(), nil, s.snapshot(k)))
+	}
 	return rawKey, k, nil
 }
 
@@ -148,6 +167,10 @@ func (s *APIKeyService) Validate(ctx context.Context, rawKey string) (string, er
 func (s *APIKeyService) Revoke(ctx context.Context, keyID uuid.UUID) error {
 	_, err := s.col.UpdateOne(ctx, bson.M{"_id": keyID},
 		bson.M{"$set": bson.M{"isActive": false, "updatedAt": time.Now()}})
+	if err == nil && s.audit != nil {
+		s.audit.Record(ctx, audit.New("apiKey.revoke", collection, keyID.String(),
+			map[string]any{"isActive": true}, map[string]any{"isActive": false}))
+	}
 	return err
 }
 

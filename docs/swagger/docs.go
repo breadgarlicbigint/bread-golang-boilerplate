@@ -410,6 +410,108 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/audit": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "audit"
+                ],
+                "summary": "Read the audit trail (paginated, newest first)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by actor",
+                        "name": "actorId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "entityType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter to one record",
+                        "name": "entityId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Action",
+                        "name": "action",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "NORMAL | HIGH",
+                        "name": "risk",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Entry"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/audit/entity/{type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "audit"
+                ],
+                "summary": "Full change history for one record, oldest first",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Entry"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/2fa/enable": {
             "post": {
                 "security": [
@@ -2315,6 +2417,75 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Entry": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actorId": {
+                    "type": "string"
+                },
+                "actorRole": {
+                    "type": "string"
+                },
+                "after": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "at": {
+                    "type": "string"
+                },
+                "before": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "changedFields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "clientPlatform": {
+                    "type": "string"
+                },
+                "correlationId": {
+                    "type": "string"
+                },
+                "entityId": {
+                    "type": "string"
+                },
+                "entityType": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ipAddress": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "risk": {
+                    "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Risk"
+                },
+                "tenantId": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Risk": {
+            "type": "string",
+            "enum": [
+                "NORMAL",
+                "HIGH"
+            ],
+            "x-enum-varnames": [
+                "RiskNormal",
+                "RiskHigh"
+            ]
         },
         "github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorDetail": {
             "type": "object",

@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	activitySvc  "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/activity/service"
+	auditHdl     "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/activity/handler"
 	analyticsHdl "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/analytics/handler"
 	analyticsSvc "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/analytics/service"
 	apikeySvc    "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/apikey/service"
@@ -148,8 +149,12 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	if err := rRepo.EnsureRoles(context.Background()); err != nil {
 		log.Warn("app: ensure system roles failed", zap.Error(err))
 	}
-	apiKeySvc   := apikeySvc.New(mongo, hasher, cfg.APIKey.Prefix)
-	actSvc      := activitySvc.New(mongo)
+	actSvc       := activitySvc.New(mongo)
+	auditService := activitySvc.NewAudit(mongo, log)
+	if err := auditService.EnsureIndexes(context.Background()); err != nil {
+		log.Warn("app: ensure audit indexes failed", zap.Error(err))
+	}
+	apiKeySvc := apikeySvc.New(mongo, hasher, cfg.APIKey.Prefix).WithAudit(auditService)
 	authService := authSvc.New(uRepo, uSvc, rRepo, jwtMgr, hasher, rdb, *cfg, log, localMailer)
 
 	// ── Social Auth ───────────────────────────────────────────────────────────
@@ -285,6 +290,7 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 		rateLimiter.Middleware(),
 		versionMw,
 		activityMw,
+		middleware.AuditContext(),
 		middleware.TestClock(cfg.TestClock.Allowed),
 	)
 
@@ -331,6 +337,9 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 
 	// Roles (used to populate role-selection dropdowns, e.g. admin "create user" form)
 	roleHdl.New(rSvc).RegisterRoutes(v1, authMw, adminMw)
+
+	// Audit trail (read-only, behind audit:read + RequireTenant)
+	auditHdl.New(auditService).RegisterRoutes(v1, authMw)
 
 	// Mobile verification
 	mobileHdl.New(mobileService).RegisterRoutes(v1, authMw)
