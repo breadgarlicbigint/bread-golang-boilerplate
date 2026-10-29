@@ -115,7 +115,9 @@
     "testEmailFailed": "Test email failed",
     "testEmailSent": "Test email sent",
     "mailerNotConfigured": "Email delivery is not configured",
-    "emailNotAvailable": "Recipient email address is required in data.email for the email channel"
+    "emailNotAvailable": "Recipient email address is required in data.email for the email channel",
+    "deleteSuccess": "Notification removed",
+    "deleteAllSuccess": "Notifications cleared"
   },
   "realtime": {
     "publishSuccess": "Event published",

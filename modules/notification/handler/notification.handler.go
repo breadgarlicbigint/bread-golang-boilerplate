@@ -21,6 +21,8 @@ type NotifSvc interface {
 	UnreadCount(ctx context.Context, userID uuid.UUID) (int64, error)
 	MarkRead(ctx context.Context, notifID, userID uuid.UUID) error
 	MarkAllRead(ctx context.Context, userID uuid.UUID) error
+	Delete(ctx context.Context, notifID, userID uuid.UUID) error
+	DeleteAll(ctx context.Context, userID uuid.UUID, readOnly bool) (int64, error)
 	RegisterDevice(ctx context.Context, userID uuid.UUID, req notifDTO.RegisterDeviceRequest) error
 	RemoveDevice(ctx context.Context, userID uuid.UUID, token string) error
 	GetPreferences(ctx context.Context, userID uuid.UUID) (*notifEntity.NotificationPreferences, error)
@@ -43,6 +45,8 @@ func (h *NotificationHandler) RegisterRoutes(rg *gin.RouterGroup, authMw gin.Han
 	me.GET("/unread-count",     h.UnreadCount)
 	me.PATCH("/:id/read",      h.MarkRead)
 	me.PATCH("/read-all",      h.MarkAllRead)
+	me.DELETE("/:id",          h.Delete)
+	me.DELETE("",              h.DeleteAll)
 	me.GET("/preferences",     h.GetPreferences)
 	me.PATCH("/preferences",   h.UpdatePreferences)
 	me.POST("/devices",        h.RegisterDevice)
@@ -103,6 +107,33 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 		return
 	}
 	response.OKI18n(c, "notification.markAllReadSuccess", nil)
+}
+
+// Delete removes one of the caller's own notifications (hard delete; userId is
+// in the filter, so a wrong id is a silent no-op, never an existence oracle).
+func (h *NotificationHandler) Delete(c *gin.Context) {
+	notifID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.ErrorI18n(c, http.StatusBadRequest, "notification.invalidID")
+		return
+	}
+	if err := h.svc.Delete(c.Request.Context(), notifID, mustUserID(c)); err != nil {
+		response.HandleAppError(c, err)
+		return
+	}
+	response.OKI18n(c, "notification.deleteSuccess", nil)
+}
+
+// DeleteAll clears the caller's in-app notifications; ?readOnly=true limits it
+// to the ones already read.
+func (h *NotificationHandler) DeleteAll(c *gin.Context) {
+	readOnly := c.Query("readOnly") == "true"
+	n, err := h.svc.DeleteAll(c.Request.Context(), mustUserID(c), readOnly)
+	if err != nil {
+		response.HandleAppError(c, err)
+		return
+	}
+	response.OKI18n(c, "notification.deleteAllSuccess", gin.H{"deleted": n})
 }
 
 func (h *NotificationHandler) GetPreferences(c *gin.Context) {

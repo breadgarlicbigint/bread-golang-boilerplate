@@ -103,7 +103,9 @@
     "testEmailFailed": "Email uji coba gagal",
     "testEmailSent": "Email uji coba terkirim",
     "mailerNotConfigured": "Pengiriman email belum dikonfigurasi",
-    "emailNotAvailable": "Alamat email penerima wajib diisi pada data.email untuk kanal email"
+    "emailNotAvailable": "Alamat email penerima wajib diisi pada data.email untuk kanal email",
+    "deleteSuccess": "Notifikasi dihapus",
+    "deleteAllSuccess": "Notifikasi dibersihkan"
   },
   "realtime": {
     "publishSuccess": "Peristiwa berhasil dipublikasikan",

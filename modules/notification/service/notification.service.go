@@ -303,6 +303,35 @@ func (s *NotificationService) MarkAllRead(ctx context.Context, userID uuid.UUID)
 	return err
 }
 
+// Delete removes one of the caller's own notifications. The userId is part of
+// the filter, not a separate check, so a user can only ever address their own
+// rows — a wrong id is a silent no-op rather than a leak of whether that id
+// exists.
+//
+// It is a HARD delete, deliberately: a notification is a delivered copy of an
+// event, not the event. The event itself is in audit_logs / activity_logs (the
+// append-only trail); keeping tombstones of dismissed alerts would grow without
+// bound and make "clear" a lie. Nothing references a notification by id.
+func (s *NotificationService) Delete(ctx context.Context, notifID, userID uuid.UUID) error {
+	_, err := s.notifCol.DeleteOne(ctx, bson.M{"_id": notifID, "userId": userID})
+	return err
+}
+
+// DeleteAll clears the caller's in-app notifications and returns how many went.
+// readOnly limits it to the ones already read — clearing unread alerts the owner
+// has not looked at yet is the one destructive case worth being able to avoid.
+func (s *NotificationService) DeleteAll(ctx context.Context, userID uuid.UUID, readOnly bool) (int64, error) {
+	filter := bson.M{"userId": userID, "channel": notifEntity.ChannelInApp}
+	if readOnly {
+		filter["isRead"] = true
+	}
+	res, err := s.notifCol.DeleteMany(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
+
 // ── Device tokens ─────────────────────────────────────────────────────────────
 
 // RegisterDevice upserts an FCM device token for a user.
