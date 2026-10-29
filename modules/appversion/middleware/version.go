@@ -25,10 +25,12 @@ type VersionChecker interface {
 // query string, and kept as prefixes so wildcard file routes (/files/*key) match
 // too — relevant once a project serves its own update artefacts.
 var exemptPrefixes = []string{
-	"/v1/app-version/check", // the check that tells the client what to do
-	"/files/",               // locally-served artefacts (e.g. an update download)
-	"/health",               // liveness must not depend on a client's version
-	"/metrics",              // scraped by Prometheus, which sends no version header
+	"/v1/app-version/check",    // the check that tells the client what to do
+	"/v1/app-version/download", // the stable link to the update itself
+	"/v1/app-version/release",  // the CI publish route (API-key gated, no session)
+	"/files/",                  // locally-served artefacts
+	"/health",                  // liveness must not depend on a client's version
+	"/metrics",                 // scraped by Prometheus, which sends no version header
 }
 
 func exempt(p string) bool {
@@ -38,6 +40,23 @@ func exempt(p string) bool {
 		}
 	}
 	return false
+}
+
+// RequestBase is "scheme://host" as the CALLER reached this API, used to build a
+// download URL that points somewhere the caller can actually get to — a dev port
+// forward or an emulator's host remap means no static config value predicts it.
+func RequestBase(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	if c.Request.Host == "" {
+		return ""
+	}
+	return scheme + "://" + c.Request.Host
 }
 
 // VersionCheck inspects X-App-Version + X-App-Platform headers and:

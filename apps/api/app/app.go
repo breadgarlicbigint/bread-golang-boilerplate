@@ -52,6 +52,7 @@ import (
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
 	pkgi18n      "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/i18n"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/metrics"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/storage"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/mqtt"
 	pkgrealtime  "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/realtime"
 	swaggerFiles "github.com/swaggo/files"
@@ -251,7 +252,15 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	}
 
 	// ── App versioning ────────────────────────────────────────────────────────
-	versionService := appverSvc.New(mongo)
+	versionService := appverSvc.New(mongo).WithAudit(auditService).WithLogger(log)
+	// Build-artefact storage for the release pipeline (same driver as everything
+	// else; local by default). A failure just leaves the release endpoint unable
+	// to store an APK — policy-only publishes still work.
+	if store, stErr := storage.New(cfg); stErr == nil {
+		versionService.WithStorage(store)
+	} else {
+		log.Warn("app: storage init failed — app-release artefact upload disabled", zap.Error(stErr))
+	}
 
 	// ── Analytics ─────────────────────────────────────────────────────────────
 	analyticsService := analyticsSvc.New(mongo)
@@ -357,7 +366,11 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	iotHdl.New(iotService).RegisterRoutes(v1, authMw, adminMw)
 
 	// App versioning
-	appverHdl.New(versionService).RegisterRoutes(v1, authMw, adminMw)
+	appverReleaseHdl := appverHdl.New(versionService)
+	appverReleaseHdl.RegisterRoutes(v1, authMw, adminMw)
+	// CI publish route on its own API-key gate (no session, no tenant). maxBytes
+	// 0 ⇒ the handler's default artefact cap.
+	appverReleaseHdl.RegisterReleaseRoute(v1, apiKeyMw, 0)
 
 	// Analytics (admin-only)
 	adminV1 := engine.Group("/v1", tenantResolver, authMw, adminMw)

@@ -102,7 +102,16 @@
     "upsertSuccess": "Version policy updated",
     "notFound": "No version policy found for this platform",
     "missingParams": "platform and version are required (header or query param)",
-    "invalidPlatform": "Invalid platform. Use: ios | android | web"
+    "invalidPlatform": "Invalid platform. Use: ios | android | web",
+    "releaseSuccess": "Build published",
+    "invalidVersionCode": "versionCode must be a positive integer",
+    "invalidMandatoryFlag": "isMandatoryUpdate must be true or false",
+    "notMonotonic": "This build's version is not newer than the one already published",
+    "invalidVersion": "Version must be in MAJOR.MINOR.PATCH form",
+    "storageUnavailable": "No storage driver is configured for build artefacts",
+    "artifactTooLarge": "The build artefact is too large",
+    "uploadFailed": "The upload could not be read",
+    "noDownload": "No build is published for this platform"
   },
   "notification": {
     "sendSuccess": "Notification sent",

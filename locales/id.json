@@ -90,7 +90,16 @@
     "upsertSuccess": "Kebijakan versi berhasil diperbarui",
     "notFound": "Tidak ada kebijakan versi untuk platform ini",
     "missingParams": "platform dan version wajib diisi (header atau parameter query)",
-    "invalidPlatform": "Platform tidak valid. Gunakan: ios | android | web"
+    "invalidPlatform": "Platform tidak valid. Gunakan: ios | android | web",
+    "releaseSuccess": "Build dipublikasikan",
+    "invalidVersionCode": "versionCode harus berupa bilangan bulat positif",
+    "invalidMandatoryFlag": "isMandatoryUpdate harus true atau false",
+    "notMonotonic": "Versi build ini tidak lebih baru dari yang sudah dipublikasikan",
+    "invalidVersion": "Versi harus dalam format MAJOR.MINOR.PATCH",
+    "storageUnavailable": "Tidak ada driver penyimpanan yang dikonfigurasi untuk artefak build",
+    "artifactTooLarge": "Artefak build terlalu besar",
+    "uploadFailed": "Unggahan tidak dapat dibaca",
+    "noDownload": "Tidak ada build yang dipublikasikan untuk platform ini"
   },
   "notification": {
     "sendSuccess": "Notifikasi berhasil dikirim",

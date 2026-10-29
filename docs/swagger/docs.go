@@ -410,6 +410,33 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/app-version/download": {
+            "get": {
+                "tags": [
+                    "versioning"
+                ],
+                "summary": "Download the latest app build",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "android (default) | ios",
+                        "name": "platform",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Found"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/audit": {
             "get": {
                 "security": [
@@ -1814,6 +1841,13 @@ const docTemplate = `{
         "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_appversion_service.AppVersion": {
             "type": "object",
             "properties": {
+                "apkKey": {
+                    "description": "APKKey is the storage key of the current artefact, never a URL — it is\nresolved to a fetchable (presigned) URL at read time.",
+                    "type": "string"
+                },
+                "apkSize": {
+                    "type": "integer"
+                },
                 "createdAt": {
                     "type": "string"
                 },
@@ -1838,11 +1872,18 @@ const docTemplate = `{
                 "releaseNotes": {
                     "type": "string"
                 },
+                "sha256": {
+                    "type": "string"
+                },
                 "storeUrl": {
                     "type": "string"
                 },
                 "updatedAt": {
                     "type": "string"
+                },
+                "versionCode": {
+                    "description": "VersionCode is a monotonic integer (Android's own, derived by CI). The\nserver never computes it — it only refuses to move it backwards.",
+                    "type": "integer"
                 }
             }
         },
@@ -1893,6 +1934,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "releaseNotes": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "description": "SHA256 lets a client reject a truncated or tampered download before\nhanding it to the OS installer.",
                     "type": "string"
                 },
                 "status": {
