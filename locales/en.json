@@ -218,6 +218,9 @@
     "lteItems": "{{.Field}} must not contain more than {{.Param}} entries",
     "default": "{{.Field}} is not valid"
   },
+  "pagination": {
+    "invalidGroupBy": "This list cannot be grouped by the selected column"
+  },
   "fields": {
     "body": "Message",
     "channel": "Channel",

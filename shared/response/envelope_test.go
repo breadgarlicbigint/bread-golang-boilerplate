@@ -27,6 +27,21 @@ func TestErrorEnvelope_OmitsNewFieldsWhenUnset(t *testing.T) {
 	}
 }
 
+// An ungrouped page's Meta must serialize byte-identically to a pre-grouping
+// one — groups/summary/visibleTotal are all omitempty, so a client parsing the
+// old shape sees no new keys unless grouping is actually used.
+func TestMeta_OmitsGroupingFieldsWhenUnset(t *testing.T) {
+	m := Meta{Total: 100, Page: 1, PerPage: 20, TotalPage: 5, HasNext: true, HasPrev: false}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `{"total":100,"page":1,"perPage":20,"totalPage":5,"hasNext":true,"hasPrev":false}`
+	if string(b) != want {
+		t.Errorf("Meta drifted:\n got  %s\n want %s", b, want)
+	}
+}
+
 // When a caller DOES set code and details they appear; this pins the field names
 // clients branch on.
 func TestErrorEnvelope_CarriesCodeAndDetailsWhenSet(t *testing.T) {

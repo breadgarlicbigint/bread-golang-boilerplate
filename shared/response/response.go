@@ -37,6 +37,10 @@ type Envelope struct {
 }
 
 // Meta holds pagination metadata.
+//
+// Groups, Summary and VisibleTotal are all omitempty, so an ungrouped response
+// stays byte-identical to a pre-grouping one. Groups/Summary are typed `any` to
+// keep this package free of a dependency on shared/pagination.
 type Meta struct {
 	Total     int64  `json:"total"`
 	Page      int    `json:"page"`
@@ -45,6 +49,13 @@ type Meta struct {
 	HasNext   bool   `json:"hasNext"`
 	HasPrev   bool   `json:"hasPrev"`
 	Cursor    string `json:"cursor,omitempty"`
+	// VisibleTotal is the group-paged visible-sequence length (headers + rows of
+	// open groups); a pointer so 0 is distinguishable from absent.
+	VisibleTotal *int64 `json:"visibleTotal,omitempty"`
+	// Groups carries the full size of every group in a grouped page's window.
+	Groups any `json:"groups,omitempty"`
+	// Summary carries a report's aggregate over the whole result set.
+	Summary any `json:"summary,omitempty"`
 }
 
 // ErrorDetail is included in error responses.

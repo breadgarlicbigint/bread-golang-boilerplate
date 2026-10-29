@@ -20,6 +20,8 @@ import (
 // Svc is the handler's view of the audit service.
 type Svc interface {
 	List(ctx context.Context, tenantID uuid.UUID, f activitySvc.AuditFilter, q pagination.Query) ([]audit.Entry, int64, error)
+	ListGrouped(ctx context.Context, tenantID uuid.UUID, f activitySvc.AuditFilter, q pagination.Query) ([]pagination.GroupedRow, int64, []pagination.GroupCount, error)
+	ListGroupPaged(ctx context.Context, tenantID uuid.UUID, f activitySvc.AuditFilter, q pagination.Query) ([]any, int64, int64, error)
 	EntityHistory(ctx context.Context, tenantID uuid.UUID, entityType, entityID string) ([]audit.Entry, error)
 }
 
@@ -61,6 +63,39 @@ func (h *AuditHandler) List(c *gin.Context) {
 		Risk:       c.Query("risk"),
 	}
 	q := pagination.FromContext(c)
+
+	// Group-paged: the page windows the VISIBLE sequence (headers + rows of open
+	// groups). Checked before IsGrouped, which it implies.
+	if q.IsGroupPaged() {
+		items, total, visible, err := h.svc.ListGroupPaged(c.Request.Context(), tenant(c), f, q)
+		if err != nil {
+			response.HandleAppError(c, err)
+			return
+		}
+		m := q.BuildMetaVisible(total, visible)
+		response.OKWithMetaI18n(c, "audit.listSuccess", items, &response.Meta{
+			Total: m.Total, VisibleTotal: m.VisibleTotal, Page: m.Page, PerPage: m.PerPage,
+			TotalPage: m.TotalPage, HasNext: m.HasNext, HasPrev: m.HasPrev,
+		})
+		return
+	}
+
+	// Grouped: the same page of RECORDS, wrapped with each entry's group path.
+	// Paging and `total` are unchanged from ungrouped.
+	if q.IsGrouped() {
+		rows, total, groups, err := h.svc.ListGrouped(c.Request.Context(), tenant(c), f, q)
+		if err != nil {
+			response.HandleAppError(c, err)
+			return
+		}
+		m := q.BuildMeta(total)
+		response.OKWithMetaI18n(c, "audit.listSuccess", rows, &response.Meta{
+			Total: m.Total, Page: m.Page, PerPage: m.PerPage, TotalPage: m.TotalPage,
+			HasNext: m.HasNext, HasPrev: m.HasPrev, Groups: groups,
+		})
+		return
+	}
+
 	rows, total, err := h.svc.List(c.Request.Context(), tenant(c), f, q)
 	if err != nil {
 		response.HandleAppError(c, err)

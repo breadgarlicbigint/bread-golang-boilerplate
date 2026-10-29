@@ -92,6 +92,38 @@ func auditFilter(tenantID uuid.UUID, f AuditFilter) bson.M {
 	return filter
 }
 
+// GroupFields is the audit trail's grouping whitelist. Every entry is one of a
+// small set of actions, entity types, risk levels and actor roles — exactly what
+// makes a trail worth grouping. Free-text fields (actorId, entityId, note) are
+// deliberately absent: grouping by them yields one group per row.
+var GroupFields = pagination.GroupFields{
+	"action":     {Path: "action", Kind: pagination.GroupString},
+	"entityType": {Path: "entityType", Kind: pagination.GroupString},
+	"risk":       {Path: "risk", Kind: pagination.GroupString},
+	"actorRole":  {Path: "actorRole", Kind: pagination.GroupString},
+}
+
+// ListGrouped returns one grouped page of the trail — the same records as List,
+// wrapped with each entry's group path, newest-first within each group.
+func (s *AuditService) ListGrouped(ctx context.Context, tenantID uuid.UUID, f AuditFilter, q pagination.Query) ([]pagination.GroupedRow, int64, []pagination.GroupCount, error) {
+	levels, err := GroupFields.Levels(q)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	return pagination.GroupedFind[audit.Entry](ctx, s.col, auditFilter(tenantID, f), levels, q, bson.E{Key: "at", Value: -1})
+}
+
+// ListGroupPaged returns one page of the VISIBLE sequence (headers + rows of
+// open groups). The default sort stays `at` descending, carried through as a
+// full bson.E so grouping does not silently reverse the newest-first trail.
+func (s *AuditService) ListGroupPaged(ctx context.Context, tenantID uuid.UUID, f AuditFilter, q pagination.Query) ([]any, int64, int64, error) {
+	levels, err := GroupFields.Levels(q)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return pagination.GroupPagedFind[audit.Entry](ctx, s.col, auditFilter(tenantID, f), levels, pagination.GroupSummary{}, q, bson.E{Key: "at", Value: -1})
+}
+
 // List returns one page of the tenant's audit trail, newest first.
 func (s *AuditService) List(ctx context.Context, tenantID uuid.UUID, f AuditFilter, q pagination.Query) ([]audit.Entry, int64, error) {
 	filter := auditFilter(tenantID, f)
