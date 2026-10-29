@@ -41,7 +41,23 @@ type User struct {
 	LastLoginAt      *time.Time     `bson:"lastLoginAt"          json:"lastLoginAt,omitempty"`
 	Status           UserStatus     `bson:"status"               json:"status"`
 	RoleID           uuid.UUID      `bson:"roleId"               json:"roleId"`
-	EmailVerified    bool           `bson:"emailVerified"        json:"emailVerified"`
+	// TenantID is the tenant the user belongs to. uuid.Nil ⇒ a platform-scoped
+	// user (no tenant). The JWT's tenant claim is read from this, never from a
+	// client header.
+	TenantID uuid.UUID `bson:"tenantId" json:"tenantId,omitempty"`
+	// ExtraPermissions are per-user grants layered ON TOP of the role's set — how
+	// an admin gives one user a capability the role does not carry. Effective
+	// permissions in the JWT are (role ∪ extras) − revoked. Values are permission
+	// slugs from the grantable set; the wildcard "*" is never grantable per user.
+	ExtraPermissions []string `bson:"extraPermissions" json:"extraPermissions,omitempty"`
+	// RevokedPermissions are per-user WITHDRAWALS from the role's set — how an
+	// admin takes a capability the role grants away from ONE person. A separate
+	// list rather than an editable per-tenant role, because roles are code-seeded
+	// and refreshed on boot; layering on top is the same arrangement
+	// ExtraPermissions is, in the other direction. A wildcard role is never
+	// subtracted from (see auth.effectivePermissions).
+	RevokedPermissions []string `bson:"revokedPermissions" json:"revokedPermissions,omitempty"`
+	EmailVerified      bool     `bson:"emailVerified"        json:"emailVerified"`
 	TwoFAEnabled     bool           `bson:"twoFAEnabled"         json:"twoFAEnabled"`
 	TwoFASecret      string         `bson:"twoFASecret"          json:"-"`
 	BackupCodes      []string       `bson:"backupCodes"          json:"-"`

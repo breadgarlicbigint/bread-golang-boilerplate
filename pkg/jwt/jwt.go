@@ -19,12 +19,19 @@ const (
 )
 
 // Claims is the JWT payload stored in every token.
+//
+// TenantID is the tenant the user belongs to ("" ⇒ a platform-scoped user with
+// no tenant, e.g. a super admin); Permissions is the user's flattened
+// per-action permission set ("*" grants everything). Server-side authorization
+// reads these — clients only use them to hide controls.
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID    string    `json:"uid"`
-	SessionID string    `json:"sid"`
-	Role      string    `json:"role"`
-	TokenType TokenType `json:"type"`
+	UserID      string    `json:"uid"`
+	SessionID   string    `json:"sid"`
+	Role        string    `json:"role"`
+	TenantID    string    `json:"tid,omitempty"`
+	Permissions []string  `json:"perms,omitempty"`
+	TokenType   TokenType `json:"type"`
 }
 
 // Manager holds the key pairs for both token types.
@@ -68,8 +75,9 @@ func New(
 	}, nil
 }
 
-// IssueAccess creates a signed ES256 access token.
-func (m *Manager) IssueAccess(userID, sessionID, role string) (string, time.Time, error) {
+// IssueAccess creates a signed ES256 access token. tenantID is "" for a
+// platform-scoped user (no tenant); permissions is the user's flattened set.
+func (m *Manager) IssueAccess(userID, sessionID, role, tenantID string, permissions []string) (string, time.Time, error) {
 	exp := time.Now().Add(m.accessTTL)
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -78,17 +86,21 @@ func (m *Manager) IssueAccess(userID, sessionID, role string) (string, time.Time
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        uuid.NewString(),
 		},
-		UserID:    userID,
-		SessionID: sessionID,
-		Role:      role,
-		TokenType: AccessToken,
+		UserID:      userID,
+		SessionID:   sessionID,
+		Role:        role,
+		TenantID:    tenantID,
+		Permissions: permissions,
+		TokenType:   AccessToken,
 	}
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodES256, claims).SignedString(m.accessPriv)
 	return tok, exp, err
 }
 
-// IssueRefresh creates a signed ES512 refresh token.
-func (m *Manager) IssueRefresh(userID, sessionID, role string) (string, time.Time, error) {
+// IssueRefresh creates a signed ES512 refresh token. The refresh token carries
+// tenantID + permissions too so a refresh can re-mint an access token without a
+// DB round-trip; on rotation the auth service re-reads the user for freshness.
+func (m *Manager) IssueRefresh(userID, sessionID, role, tenantID string, permissions []string) (string, time.Time, error) {
 	exp := time.Now().Add(m.refreshTTL)
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -97,10 +109,12 @@ func (m *Manager) IssueRefresh(userID, sessionID, role string) (string, time.Tim
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        uuid.NewString(),
 		},
-		UserID:    userID,
-		SessionID: sessionID,
-		Role:      role,
-		TokenType: RefreshToken,
+		UserID:      userID,
+		SessionID:   sessionID,
+		Role:        role,
+		TenantID:    tenantID,
+		Permissions: permissions,
+		TokenType:   RefreshToken,
 	}
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodES512, claims).SignedString(m.refreshPriv)
 	return tok, exp, err

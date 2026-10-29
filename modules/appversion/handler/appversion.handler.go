@@ -15,10 +15,14 @@ type AppVersionSvc interface {
 	Check(ctx context.Context, platform service.Platform, clientVersion string) (*service.VersionCheckResponse, error)
 	Upsert(ctx context.Context, platform service.Platform, current, min string, force bool, notes, storeURL string) (*service.AppVersion, error)
 	List(ctx context.Context) ([]service.AppVersion, error)
+	Release(ctx context.Context, in service.ReleaseInput) (*service.AppVersion, error)
+	DownloadURL(ctx context.Context, platform service.Platform, requestBase string) (string, error)
 }
 
 type AppVersionHandler struct {
 	svc AppVersionSvc
+	// maxBytes caps the multipart release artefact (0 ⇒ defaultMaxArtifactBytes).
+	maxBytes int64
 }
 
 func New(svc AppVersionSvc) *AppVersionHandler {
@@ -31,10 +35,58 @@ func (h *AppVersionHandler) RegisterRoutes(rg *gin.RouterGroup, extraMw ...gin.H
 	// Public — mobile apps call on launch
 	rg.GET("/app-version/check", h.Check)
 
+	// Public — stable download link (safe in an email; resolves a fresh URL)
+	rg.GET("/app-version/download", h.Download)
+
 	// Admin — manage policies
 	admin := rg.Group("/admin/app-versions", extraMw...)
 	admin.GET("", h.List)
 	admin.PUT("/:platform", h.Upsert)
+}
+
+// RegisterReleaseRoute mounts the CI publish endpoint on its own gate, SEPARATE
+// from RegisterRoutes: it is the only route whose caller is a machine rather
+// than a person — it takes an API key and no session, belongs to no tenant, and
+// is the one route that can put every device behind a mandatory update.
+//
+// apiKeyMw is required, not variadic — a nil gate here is an anonymous
+// app-bricking lever the caller must be unable to forget. The route carries NO
+// swagger annotations deliberately, so it is absent from the published spec;
+// swagger_absence_test.go asserts that so the omission can't be undone.
+func (h *AppVersionHandler) RegisterReleaseRoute(rg *gin.RouterGroup, apiKeyMw gin.HandlerFunc, maxBytes int64) {
+	h.maxBytes = maxBytes
+	rg.POST("/app-version/release", apiKeyMw, h.Release)
+}
+
+// Download redirects to the current release's artefact (or its store page). A
+// stable link: the presigned URL it resolves to is minted per request.
+//
+// @Summary     Download the latest app build
+// @Tags        versioning
+// @Param       platform query string false "android (default) | ios"
+// @Success     302
+// @Failure     404 {object} response.ErrorEnvelope
+// @Router      /v1/app-version/download [get]
+func (h *AppVersionHandler) Download(c *gin.Context) {
+	platform := service.Platform(c.DefaultQuery("platform", string(service.PlatformAndroid)))
+	switch platform {
+	case service.PlatformAndroid, service.PlatformIOS:
+	default:
+		response.ErrorI18n(c, http.StatusBadRequest, "appVersion.invalidPlatform")
+		return
+	}
+	url, err := h.svc.DownloadURL(c.Request.Context(), platform, middleware.RequestBase(c))
+	if err != nil {
+		response.HandleAppError(c, err)
+		return
+	}
+	if url == "" {
+		response.ErrorI18n(c, http.StatusNotFound, "appVersion.noDownload")
+		return
+	}
+	// 302, not 301: the target changes with every release and must never be
+	// cached by a browser as the link's permanent answer.
+	c.Redirect(http.StatusFound, url)
 }
 
 // Check godoc

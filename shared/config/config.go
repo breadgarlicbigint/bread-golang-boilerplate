@@ -17,7 +17,9 @@ type Config struct {
 	Auth         AuthConfig
 	Rate         RateLimitConfig
 	APIKey       APIKeyConfig
+	Swagger      SwaggerConfig
 	AWS          AWSConfig
+	Storage      StorageConfig
 	Mail         MailConfig
 	Google       GoogleConfig
 	Apple        AppleConfig
@@ -28,6 +30,7 @@ type Config struct {
 	I18n         I18nConfig
 	Tenant       TenantConfig
 	Notification NotificationConfig
+	TestClock    TestClockConfig
 	Sentry       SentryConfig
 	Worker       WorkerConfig
 	Queue        QueueConfig
@@ -48,12 +51,20 @@ type AppConfig struct {
 }
 
 type MongoConfig struct {
-	URI      string        `mapstructure:"MONGO_URI"`
-	DBName   string        `mapstructure:"MONGO_DB_NAME"`
-	IDType   string        `mapstructure:"MONGO_ID_TYPE"` // "uuid" (default) or "objectid"
-	PoolMin  uint64        `mapstructure:"MONGO_POOL_MIN"`
-	PoolMax  uint64        `mapstructure:"MONGO_POOL_MAX"`
-	Timeout  time.Duration `mapstructure:"MONGO_TIMEOUT"`
+	URI     string        `mapstructure:"MONGO_URI"`
+	DBName  string        `mapstructure:"MONGO_DB_NAME"`
+	IDType  string        `mapstructure:"MONGO_ID_TYPE"` // "uuid" (default) or "objectid"
+	PoolMin uint64        `mapstructure:"MONGO_POOL_MIN"`
+	PoolMax uint64        `mapstructure:"MONGO_POOL_MAX"`
+	Timeout time.Duration `mapstructure:"MONGO_TIMEOUT"`
+	// Deployment selects whether multi-document TRANSACTIONS are available:
+	// "replicaset" (or "sharded") uses them, "standalone" does not, and "auto"
+	// (the default) probes the topology at connect time. A standalone mongod
+	// REFUSES transactions outright ("Transaction numbers are only allowed on a
+	// replica set member or mongos"), so a deployment that cannot run a replica
+	// set needs this rather than failing deep inside the first transactional
+	// write. See database.Transactor.
+	Deployment string `mapstructure:"MONGO_DEPLOYMENT"`
 }
 
 type RedisConfig struct {
@@ -89,6 +100,17 @@ type APIKeyConfig struct {
 	Prefix string `mapstructure:"API_KEY_PREFIX"`
 }
 
+// SwaggerConfig gates the Swagger UI at /docs. Enabled defaults to on everywhere
+// except APP_ENV=production; production opts in with SWAGGER_ENABLED=true and
+// must then set User/Password, which put HTTP basic auth in front of the whole
+// /docs tree. The API refuses to start on an enabled production Swagger with no
+// credentials — the page lists every route.
+type SwaggerConfig struct {
+	Enabled  bool   `mapstructure:"SWAGGER_ENABLED"`
+	User     string `mapstructure:"SWAGGER_USER"`
+	Password string `mapstructure:"SWAGGER_PASSWORD"`
+}
+
 type AWSConfig struct {
 	Region          string `mapstructure:"AWS_REGION"`
 	AccessKeyID     string `mapstructure:"AWS_ACCESS_KEY_ID"`
@@ -106,6 +128,19 @@ type AWSS3Config struct {
 type AWSSESConfig struct {
 	FromEmail string `mapstructure:"AWS_SES_FROM_EMAIL"`
 	FromName  string `mapstructure:"AWS_SES_FROM_NAME"`
+}
+
+// StorageConfig selects the file-storage backend. Driver "s3" uses
+// AWSConfig/AWSS3Config above; "local" (the offline-friendly default) writes
+// under LocalDir and serves keys from LocalBaseURL. Documents persist storage
+// KEYS, not URLs — both drivers round-trip the same key, and a key is resolved
+// to a fetchable URL at read time via storage.PresignDownload.
+type StorageConfig struct {
+	Driver       string `mapstructure:"STORAGE_DRIVER"`         // "s3" | "local" (default local)
+	LocalDir     string `mapstructure:"STORAGE_LOCAL_DIR"`      // filesystem root for the local driver
+	LocalBaseURL string `mapstructure:"STORAGE_LOCAL_BASE_URL"` // public base URL the API serves local files from
+	// UploadMaxBytes caps a single upload (0 ⇒ no cap).
+	UploadMaxBytes int64 `mapstructure:"UPLOAD_MAX_BYTES"`
 }
 
 // MailConfig selects the email transport. Driver: "ses" (default, uses
@@ -229,7 +264,8 @@ func Load() (*Config, error) {
 	v.SetDefault("MONGO_DB_NAME", "bread_boilerplate")
 	v.SetDefault("MONGO_POOL_MIN", 2)
 	v.SetDefault("MONGO_POOL_MAX", 10)
-	v.SetDefault("MONGO_TIMEOUT", "30s") // 30s for replica set election during startup
+	v.SetDefault("MONGO_TIMEOUT", "30s")     // 30s for replica set election during startup
+	v.SetDefault("MONGO_DEPLOYMENT", "auto") // auto | standalone | replicaset | sharded
 	v.SetDefault("REDIS_HOST", "localhost")
 	v.SetDefault("REDIS_PORT", "6379")
 	v.SetDefault("REDIS_DB", 0)
@@ -244,6 +280,11 @@ func Load() (*Config, error) {
 	v.SetDefault("API_KEY_PREFIX", "bread")
 	v.SetDefault("MAIL_DRIVER", "ses") // "ses" or "smtp"
 	v.SetDefault("SMTP_PORT", "587")
+	// Storage: offline-friendly local driver by default.
+	v.SetDefault("STORAGE_DRIVER", "local")
+	v.SetDefault("STORAGE_LOCAL_DIR", "./storage-data")
+	v.SetDefault("STORAGE_LOCAL_BASE_URL", "http://localhost:3000/files")
+	v.SetDefault("UPLOAD_MAX_BYTES", 5*1024*1024) // 5 MB per file
 	v.SetDefault("WORKER_CONCURRENCY", 10)
 	v.SetDefault("WORKER_QUEUES", "default:6,critical:3,low:1")
 	v.SetDefault("QUEUE_DRIVER", "redis") // redis | rabbitmq | kafka
@@ -268,6 +309,7 @@ func Load() (*Config, error) {
 	v.SetDefault("BASE_DOMAIN", "localhost")
 	v.SetDefault("NOTIFICATION_ENABLED", true)
 	v.SetDefault("APP_VERSION_CHECK_ENABLED", true)
+	v.SetDefault("ALLOW_TEST_CLOCK", false) // must stay off everywhere but tests
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -287,12 +329,13 @@ func Load() (*Config, error) {
 		URL:     v.GetString("APP_URL"),
 	}
 	cfg.Mongo = MongoConfig{
-		URI:     v.GetString("MONGO_URI"),
-		DBName:  v.GetString("MONGO_DB_NAME"),
-		IDType:  v.GetString("MONGO_ID_TYPE"),
-		PoolMin: v.GetUint64("MONGO_POOL_MIN"),
-		PoolMax: v.GetUint64("MONGO_POOL_MAX"),
-		Timeout: v.GetDuration("MONGO_TIMEOUT"),
+		URI:        v.GetString("MONGO_URI"),
+		DBName:     v.GetString("MONGO_DB_NAME"),
+		IDType:     v.GetString("MONGO_ID_TYPE"),
+		PoolMin:    v.GetUint64("MONGO_POOL_MIN"),
+		PoolMax:    v.GetUint64("MONGO_POOL_MAX"),
+		Timeout:    v.GetDuration("MONGO_TIMEOUT"),
+		Deployment: v.GetString("MONGO_DEPLOYMENT"),
 	}
 	cfg.Redis = RedisConfig{
 		Host:     v.GetString("REDIS_HOST"),
@@ -322,6 +365,17 @@ func Load() (*Config, error) {
 		Header: v.GetString("API_KEY_HEADER"),
 		Prefix: v.GetString("API_KEY_PREFIX"),
 	}
+	// No SetDefault: the default depends on APP_ENV, so an unset flag keeps the
+	// old behaviour (on outside production, off in it).
+	swaggerEnabled := cfg.App.Env != "production"
+	if v.IsSet("SWAGGER_ENABLED") {
+		swaggerEnabled = v.GetBool("SWAGGER_ENABLED")
+	}
+	cfg.Swagger = SwaggerConfig{
+		Enabled:  swaggerEnabled,
+		User:     v.GetString("SWAGGER_USER"),
+		Password: v.GetString("SWAGGER_PASSWORD"),
+	}
 	cfg.AWS = AWSConfig{
 		Region:          v.GetString("AWS_REGION"),
 		AccessKeyID:     v.GetString("AWS_ACCESS_KEY_ID"),
@@ -335,6 +389,12 @@ func Load() (*Config, error) {
 			FromEmail: v.GetString("AWS_SES_FROM_EMAIL"),
 			FromName:  v.GetString("AWS_SES_FROM_NAME"),
 		},
+	}
+	cfg.Storage = StorageConfig{
+		Driver:         v.GetString("STORAGE_DRIVER"),
+		LocalDir:       v.GetString("STORAGE_LOCAL_DIR"),
+		LocalBaseURL:   v.GetString("STORAGE_LOCAL_BASE_URL"),
+		UploadMaxBytes: v.GetInt64("UPLOAD_MAX_BYTES"),
 	}
 	cfg.Mail = MailConfig{
 		Driver: v.GetString("MAIL_DRIVER"),
@@ -405,7 +465,8 @@ func Load() (*Config, error) {
 		FromWhatsApp: v.GetString("TWILIO_FROM_WHATSAPP"),
 	}
 	cfg.Firebase = FirebaseConfig{
-		CredentialsFile: v.GetString("FIREBASE_CREDENTIALS_FILE"),
+		CredentialsFile:  v.GetString("FIREBASE_CREDENTIALS_FILE"),
+		AndroidChannelID: v.GetString("FCM_ANDROID_CHANNEL_ID"),
 	}
 	cfg.I18n = I18nConfig{
 		DefaultLang: v.GetString("DEFAULT_LANG"),
@@ -415,8 +476,15 @@ func Load() (*Config, error) {
 		Enabled:    v.GetBool("MULTI_TENANT_ENABLED"),
 		BaseDomain: v.GetString("BASE_DOMAIN"),
 	}
+	cfg.TestClock = TestClockConfig{
+		Allowed: v.GetBool("ALLOW_TEST_CLOCK"),
+	}
 	cfg.Notification = NotificationConfig{
-		Enabled: v.GetBool("NOTIFICATION_ENABLED"),
+		Enabled:         v.GetBool("NOTIFICATION_ENABLED"),
+		WhatsAppEnabled: v.GetBool("WHATSAPP_ENABLED"),
+		SMSEnabled:      v.GetBool("SMS_ENABLED"),
+		FCMEnabled:      v.GetBool("FCM_ENABLED"),
+		SMTPEnabled:     v.GetBool("SMTP_ENABLED"),
 	}
 
 	return cfg, nil
@@ -455,6 +523,10 @@ type VersioningConfig struct {
 
 type FirebaseConfig struct {
 	CredentialsFile string `mapstructure:"FIREBASE_CREDENTIALS_FILE"`
+	// AndroidChannelID is the notification channel pushes are delivered on; it
+	// must match the channel the Android app creates. Empty falls back to
+	// service.DefaultAndroidChannelID.
+	AndroidChannelID string `mapstructure:"FCM_ANDROID_CHANNEL_ID"`
 }
 
 type I18nConfig struct {
@@ -462,6 +534,23 @@ type I18nConfig struct {
 	LocalesDir  string `mapstructure:"LOCALES_DIR"`
 }
 
+// NotificationConfig gates outbound transports. Each channel is LIVE only when
+// its *_ENABLED flag is set AND its credentials are present; otherwise the
+// sender logs a "(sim)" line and sends nothing — so default dev and the whole
+// test suite run fully offline (zero credentials ⇒ no external send).
+// TestClockConfig gates the X-Test-Now header. It exists so a live suite can
+// exercise date boundaries without restarting the server against a frozen clock.
+// Default false — and in every deployed environment — so no request can change
+// what time the server believes it is. Gated by configuration a request cannot
+// influence, deliberately unlike the spoofable X-App-* headers.
+type TestClockConfig struct {
+	Allowed bool `mapstructure:"ALLOW_TEST_CLOCK"`
+}
+
 type NotificationConfig struct {
-	Enabled bool `mapstructure:"NOTIFICATION_ENABLED"`
+	Enabled         bool `mapstructure:"NOTIFICATION_ENABLED"`
+	WhatsAppEnabled bool `mapstructure:"WHATSAPP_ENABLED"` // Twilio WhatsApp
+	SMSEnabled      bool `mapstructure:"SMS_ENABLED"`      // Twilio SMS
+	FCMEnabled      bool `mapstructure:"FCM_ENABLED"`      // Firebase push
+	SMTPEnabled     bool `mapstructure:"SMTP_ENABLED"`     // SMTP email transport
 }

@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/gin-contrib/cors"
-	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	activitySvc  "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/activity/service"
+	auditHdl     "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/activity/handler"
 	analyticsHdl "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/analytics/handler"
 	analyticsSvc "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/analytics/service"
 	apikeySvc    "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/apikey/service"
@@ -51,6 +52,7 @@ import (
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
 	pkgi18n      "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/i18n"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/metrics"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/storage"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/mqtt"
 	pkgrealtime  "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/realtime"
 	swaggerFiles "github.com/swaggo/files"
@@ -141,10 +143,23 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	uRepo       := userRepo.New(mongo)
 	rRepo       := roleRepo.New(mongo)
 	rSvc        := roleSvc.New(rRepo)
-	uSvc        := userSvc.New(uRepo, hasher, cfg.Auth, localMailer, jobQueue, cfg.App.URL, log)
-	apiKeySvc   := apikeySvc.New(mongo, hasher, cfg.APIKey.Prefix)
-	actSvc      := activitySvc.New(mongo)
+	uSvc        := userSvc.New(uRepo, hasher, cfg.Auth, localMailer, jobQueue, cfg.App.URL, log).WithRoles(rRepo)
+	// Idempotently ensure the system roles + their permission sets exist (safe on
+	// every boot). A warning, not a fatal: a transient DB hiccup here must not
+	// stop the API from starting.
+	if err := rRepo.EnsureRoles(context.Background()); err != nil {
+		log.Warn("app: ensure system roles failed", zap.Error(err))
+	}
+	actSvc       := activitySvc.New(mongo)
+	auditService := activitySvc.NewAudit(mongo, log)
+	if err := auditService.EnsureIndexes(context.Background()); err != nil {
+		log.Warn("app: ensure audit indexes failed", zap.Error(err))
+	}
+	apiKeySvc := apikeySvc.New(mongo, hasher, cfg.APIKey.Prefix).WithAudit(auditService)
 	authService := authSvc.New(uRepo, uSvc, rRepo, jwtMgr, hasher, rdb, *cfg, log, localMailer)
+	// Account-lifecycle emails: the user service mints set-password links via the
+	// auth service's reset-token issuer (a port, so user doesn't import auth).
+	uSvc.WithResetTokens(authService)
 
 	// ── Social Auth ───────────────────────────────────────────────────────────
 	ghOAuth    := authSvc.NewGitHubOAuth(cfg.GitHub)
@@ -170,20 +185,36 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 
 	// ── Multi-tenant ──────────────────────────────────────────────────────────
 	tenantService := tenantSvc.New(mongo)
+	// Tenant-bound login: a login carrying a tenantSlug must match the account's
+	// tenant (the slug resolves to a tenant id here). Attached after construction
+	// so the auth constructor stays unchanged.
+	authService.WithTenants(tenantSlugResolver{svc: tenantService})
 
 	// ── SMS / WhatsApp ────────────────────────────────────────────────────────
-	smsSender     := sms.New(sms.Config{
-		AccountSID:   cfg.Twilio.AccountSID,
-		AuthToken:    cfg.Twilio.AuthToken,
-		FromSMS:      cfg.Twilio.FromSMS,
-		FromWhatsApp: cfg.Twilio.FromWhatsApp,
+	smsSender := sms.New(sms.Config{
+		AccountSID:      cfg.Twilio.AccountSID,
+		AuthToken:       cfg.Twilio.AuthToken,
+		FromSMS:         cfg.Twilio.FromSMS,
+		FromWhatsApp:    cfg.Twilio.FromWhatsApp,
+		SMSEnabled:      cfg.Notification.SMSEnabled,
+		WhatsAppEnabled: cfg.Notification.WhatsAppEnabled,
+		Logger:          log,
 	})
 	mobileService := mobileSvc.New(mongo, rdb, smsSender, hasher, actSvc)
 
 	// ── Firebase FCM ──────────────────────────────────────────────────────────
+	// Live only when FCM_ENABLED is set AND credentials are present; otherwise
+	// push is off (a nil sender), keeping dev/tests offline by default.
 	var fcmSender *notifSvc.FCMSender
-	if cfg.Firebase.CredentialsFile != "" {
-		fcmSender, err = notifSvc.NewFCMSender(cfg.Firebase.CredentialsFile)
+	switch {
+	case !cfg.Notification.FCMEnabled:
+		if cfg.Firebase.CredentialsFile != "" {
+			log.Info("app: FCM disabled (FCM_ENABLED=false) — push simulated/off")
+		}
+	case cfg.Firebase.CredentialsFile == "":
+		log.Info("app: FCM enabled but no credentials — push simulated/off")
+	default:
+		fcmSender, err = notifSvc.NewFCMSender(cfg.Firebase.CredentialsFile, cfg.Firebase.AndroidChannelID)
 		if err != nil {
 			log.Warn("app: Firebase FCM init failed — push disabled", zap.Error(err))
 		}
@@ -221,7 +252,15 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	}
 
 	// ── App versioning ────────────────────────────────────────────────────────
-	versionService := appverSvc.New(mongo)
+	versionService := appverSvc.New(mongo).WithAudit(auditService).WithLogger(log)
+	// Build-artefact storage for the release pipeline (same driver as everything
+	// else; local by default). A failure just leaves the release endpoint unable
+	// to store an APK — policy-only publishes still work.
+	if store, stErr := storage.New(cfg); stErr == nil {
+		versionService.WithStorage(store)
+	} else {
+		log.Warn("app: storage init failed — app-release artefact upload disabled", zap.Error(stErr))
+	}
 
 	// ── Analytics ─────────────────────────────────────────────────────────────
 	analyticsService := analyticsSvc.New(mongo)
@@ -246,15 +285,7 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 		middleware.Logger(log),
 		metrics.GinMiddleware(),
 		secHeaders,
-		// /metrics is excluded: promhttp.Handler() already gzips its own
-		// response when the client sends Accept-Encoding: gzip (Prometheus
-		// always does). Without this exclusion, this middleware gzips that
-		// already-gzipped body a second time; Prometheus only strips one
-		// Content-Encoding: gzip layer, so it's left decoding the inner
-		// layer's raw gzip magic byte as if it were plaintext and every
-		// scrape fails ("expected a valid start token, got \x1f"). Verified
-		// against Prometheus v2.55.1.
-		gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/metrics"})),
+		responseCompression(),
 		cors.New(cors.Config{
 			AllowOrigins: []string{"*"},
 			AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -271,6 +302,8 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 		rateLimiter.Middleware(),
 		versionMw,
 		activityMw,
+		middleware.AuditContext(),
+		middleware.TestClock(cfg.TestClock.Allowed),
 	)
 
 	if translator != nil {
@@ -290,9 +323,9 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	healthHdl.New(mongo, rdb, cfg.App.Version).RegisterRoutes(root)
 	root.GET("/metrics", metrics.Handler())
 
-	if cfg.App.Env != "production" {
-		// Swagger UI — generated by: make swagger
-		root.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// Swagger UI (generated by `make swagger`), gated by SwaggerConfig.
+	if err := mountSwagger(root, cfg, ginSwagger.WrapHandler(swaggerFiles.Handler)); err != nil {
+		return nil, err
 	}
 
 	v1 := engine.Group("/v1", tenantResolver)
@@ -317,6 +350,9 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	// Roles (used to populate role-selection dropdowns, e.g. admin "create user" form)
 	roleHdl.New(rSvc).RegisterRoutes(v1, authMw, adminMw)
 
+	// Audit trail (read-only, behind audit:read + RequireTenant)
+	auditHdl.New(auditService).RegisterRoutes(v1, authMw)
+
 	// Mobile verification
 	mobileHdl.New(mobileService).RegisterRoutes(v1, authMw)
 
@@ -330,7 +366,11 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 	iotHdl.New(iotService).RegisterRoutes(v1, authMw, adminMw)
 
 	// App versioning
-	appverHdl.New(versionService).RegisterRoutes(v1, authMw, adminMw)
+	appverReleaseHdl := appverHdl.New(versionService)
+	appverReleaseHdl.RegisterRoutes(v1, authMw, adminMw)
+	// CI publish route on its own API-key gate (no session, no tenant). maxBytes
+	// 0 ⇒ the handler's default artefact cap.
+	appverReleaseHdl.RegisterReleaseRoute(v1, apiKeyMw, 0)
 
 	// Analytics (admin-only)
 	adminV1 := engine.Group("/v1", tenantResolver, authMw, adminMw)
@@ -484,6 +524,21 @@ type userSvcAdapter struct{ svc *userSvc.UserService }
 
 func (u *userSvcAdapter) GetByID(ctx context.Context, id string) (*userentity.User, error) {
 	return u.svc.GetByID(ctx, id)
+}
+
+// tenantSlugResolver adapts the tenant service to auth's TenantResolver: it maps
+// a login's tenant slug to the tenant id the account is checked against.
+type tenantSlugResolver struct{ svc *tenantSvc.TenantService }
+
+func (r tenantSlugResolver) TenantIDBySlug(ctx context.Context, slug string) (uuid.UUID, error) {
+	t, err := r.svc.FindBySlug(ctx, slug)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if t == nil {
+		return uuid.Nil, fmt.Errorf("tenant %q not found", slug)
+	}
+	return t.ID, nil
 }
 
 // asynqPublisherAdapter adapts *worker.Client — whose Enqueue takes a

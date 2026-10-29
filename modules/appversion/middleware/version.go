@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/appversion/service"
+	"github.com/gin-gonic/gin"
 )
 
 // Headers clients must send with every request.
@@ -16,6 +16,47 @@ const (
 
 type VersionChecker interface {
 	Check(ctx context.Context, platform service.Platform, clientVersion string) (*service.VersionCheckResponse, error)
+}
+
+// exemptPrefixes are the paths a force-updating client must still be able to
+// reach, or THE FEATURE LOCKS ITSELF OUT: this middleware is mounted on the
+// whole engine, so a client just answered 426 could otherwise not even call the
+// version check that explains why. Matched against the ROUTE path only, never a
+// query string, and kept as prefixes so wildcard file routes (/files/*key) match
+// too — relevant once a project serves its own update artefacts.
+var exemptPrefixes = []string{
+	"/v1/app-version/check",    // the check that tells the client what to do
+	"/v1/app-version/download", // the stable link to the update itself
+	"/v1/app-version/release",  // the CI publish route (API-key gated, no session)
+	"/files/",                  // locally-served artefacts
+	"/health",                  // liveness must not depend on a client's version
+	"/metrics",                 // scraped by Prometheus, which sends no version header
+}
+
+func exempt(p string) bool {
+	for _, prefix := range exemptPrefixes {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// RequestBase is "scheme://host" as the CALLER reached this API, used to build a
+// download URL that points somewhere the caller can actually get to — a dev port
+// forward or an emulator's host remap means no static config value predicts it.
+func RequestBase(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	if c.Request.Host == "" {
+		return ""
+	}
+	return scheme + "://" + c.Request.Host
 }
 
 // VersionCheck inspects X-App-Version + X-App-Platform headers and:
@@ -29,6 +70,10 @@ func VersionCheck(checker VersionChecker) gin.HandlerFunc {
 
 		// Not a versioned client — skip
 		if rawVersion == "" || rawPlatform == "" {
+			c.Next()
+			return
+		}
+		if exempt(c.Request.URL.Path) {
 			c.Next()
 			return
 		}

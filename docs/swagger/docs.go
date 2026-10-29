@@ -410,6 +410,135 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/app-version/download": {
+            "get": {
+                "tags": [
+                    "versioning"
+                ],
+                "summary": "Download the latest app build",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "android (default) | ios",
+                        "name": "platform",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Found"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/audit": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "audit"
+                ],
+                "summary": "Read the audit trail (paginated, newest first)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by actor",
+                        "name": "actorId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "entityType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter to one record",
+                        "name": "entityId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Action",
+                        "name": "action",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "NORMAL | HIGH",
+                        "name": "risk",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Entry"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/audit/entity/{type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "audit"
+                ],
+                "summary": "Full change history for one record, oldest first",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Entry"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/2fa/enable": {
             "post": {
                 "security": [
@@ -1294,6 +1423,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/roles/assignable": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The roles a non-wildcard admin may assign (create-user dropdown)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roles"
+                ],
+                "summary": "List assignable roles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_role_dto.RoleResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/users": {
             "get": {
                 "security": [
@@ -1568,6 +1737,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/users/{id}/reset-password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Set a user's password directly (admin, opt-in)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.AdminResetPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/users/{id}/send-set-password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Email a set-password link to a user (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/v1/users/{id}/unblock": {
             "post": {
                 "security": [
@@ -1600,6 +1841,13 @@ const docTemplate = `{
         "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_appversion_service.AppVersion": {
             "type": "object",
             "properties": {
+                "apkKey": {
+                    "description": "APKKey is the storage key of the current artefact, never a URL — it is\nresolved to a fetchable (presigned) URL at read time.",
+                    "type": "string"
+                },
+                "apkSize": {
+                    "type": "integer"
+                },
                 "createdAt": {
                     "type": "string"
                 },
@@ -1624,11 +1872,18 @@ const docTemplate = `{
                 "releaseNotes": {
                     "type": "string"
                 },
+                "sha256": {
+                    "type": "string"
+                },
                 "storeUrl": {
                     "type": "string"
                 },
                 "updatedAt": {
                     "type": "string"
+                },
+                "versionCode": {
+                    "description": "VersionCode is a monotonic integer (Android's own, derived by CI). The\nserver never computes it — it only refuses to move it backwards.",
+                    "type": "integer"
                 }
             }
         },
@@ -1681,6 +1936,10 @@ const docTemplate = `{
                 "releaseNotes": {
                     "type": "string"
                 },
+                "sha256": {
+                    "description": "SHA256 lets a client reject a truncated or tampered download before\nhanding it to the OS installer.",
+                    "type": "string"
+                },
                 "status": {
                     "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_modules_appversion_service.UpdateStatus"
                 },
@@ -1717,6 +1976,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "password": {
+                    "type": "string"
+                },
+                "tenantSlug": {
+                    "description": "TenantSlug optionally binds the login to a tenant: when present the account\nmust belong to that tenant, else ErrTenantMismatch. Absent grants nothing —\nthe JWT's tenant is read from the user record, never from the request.",
                     "type": "string"
                 }
             }
@@ -2084,6 +2347,21 @@ const docTemplate = `{
                 "RoleMember"
             ]
         },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.AdminResetPasswordRequest": {
+            "type": "object",
+            "required": [
+                "newPassword"
+            ],
+            "properties": {
+                "newPassword": {
+                    "type": "string",
+                    "minLength": 8
+                },
+                "sendEmail": {
+                    "type": "boolean"
+                }
+            }
+        },
         "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.BlockUserRequest": {
             "type": "object",
             "required": [
@@ -2126,6 +2404,13 @@ const docTemplate = `{
                 "email": {
                     "type": "string"
                 },
+                "extraPermissions": {
+                    "description": "ExtraPermissions grants and RevokedPermissions withdraws per-action\npermissions for this one user, layered on top of the role. Each slug must\nbe grantable; a slug in both is refused; the wildcard is never grantable.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "firstName": {
                     "type": "string",
                     "maxLength": 50,
@@ -2143,6 +2428,12 @@ const docTemplate = `{
                 "phoneNumber": {
                     "type": "string"
                 },
+                "revokedPermissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "roleId": {
                     "type": "string"
                 },
@@ -2156,6 +2447,12 @@ const docTemplate = `{
         "github_com_breadgarlicbigint_bread-golang-boilerplate_modules_user_dto.UpdateUserRequest": {
             "type": "object",
             "properties": {
+                "extraPermissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "firstName": {
                     "type": "string",
                     "maxLength": 50,
@@ -2178,6 +2475,16 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "profilePicture": {
+                    "type": "string"
+                },
+                "revokedPermissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "roleId": {
+                    "description": "RoleID / ExtraPermissions / RevokedPermissions change a user's access and\nare admin-only. They are guarded server-side: nobody may change their OWN\nrole or permissions (even via /me), and a non-wildcard admin may assign\nonly an allowlisted role. Pointers distinguish \"not provided\" from \"clear\".",
                     "type": "string"
                 }
             }
@@ -2243,6 +2550,75 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Entry": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actorId": {
+                    "type": "string"
+                },
+                "actorRole": {
+                    "type": "string"
+                },
+                "after": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "at": {
+                    "type": "string"
+                },
+                "before": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "changedFields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "clientPlatform": {
+                    "type": "string"
+                },
+                "correlationId": {
+                    "type": "string"
+                },
+                "entityId": {
+                    "type": "string"
+                },
+                "entityType": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ipAddress": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "risk": {
+                    "$ref": "#/definitions/github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Risk"
+                },
+                "tenantId": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_breadgarlicbigint_bread-golang-boilerplate_shared_audit.Risk": {
+            "type": "string",
+            "enum": [
+                "NORMAL",
+                "HIGH"
+            ],
+            "x-enum-varnames": [
+                "RiskNormal",
+                "RiskHigh"
+            ]
+        },
         "github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorDetail": {
             "type": "object",
             "properties": {
@@ -2257,6 +2633,10 @@ const docTemplate = `{
         "github_com_breadgarlicbigint_bread-golang-boilerplate_shared_response.ErrorEnvelope": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "details": {},
                 "errors": {
                     "type": "array",
                     "items": {
@@ -2293,7 +2673,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:3000",
+	Host:             "",
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Bread Golang Boilerplate",

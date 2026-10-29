@@ -34,6 +34,16 @@ func (r *RoleRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity.Ro
 	return &role, nil
 }
 
+// SlugByID returns just the slug for a role id — the shape the user service's
+// assignable-role guard depends on (structural RoleResolver interface).
+func (r *RoleRepository) SlugByID(ctx context.Context, id uuid.UUID) (string, error) {
+	role, err := r.FindByID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return string(role.Slug), nil
+}
+
 // FindBySlug returns a role by its slug string (e.g. "admin", "user").
 func (r *RoleRepository) FindBySlug(ctx context.Context, slug string) (*entity.Role, error) {
 	var role entity.Role

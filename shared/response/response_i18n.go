@@ -46,13 +46,24 @@ func NotFoundI18n(c *gin.Context, key string) {
 // when set (falling back to the raw Message otherwise); anything else is
 // logged and reported as a generic translated 500 — the client never sees a
 // raw Go error string. Use this instead of a per-handler handleError copy.
+//
+// The error's Code travels too — a client cannot always tell two errors apart
+// by status alone, and the message is translated, so matching on it works in
+// English and silently stops working in another locale. When ae.Field is set
+// (a check attributing the error to one DTO field), it is forwarded as an
+// ErrorDetail so a client renders it under that field; when ae.Details is set,
+// it rides along as the envelope's structured payload.
 func HandleAppError(c *gin.Context, err error) {
 	if ae, ok := apperrors.As(err); ok {
+		msg := ae.Message
 		if ae.Key != "" {
-			ErrorI18n(c, ae.Status, ae.Key)
-		} else {
-			Error(c, ae.Status, ae.Message)
+			msg = pkgi18n.TC(c, ae.Key)
 		}
+		var details []ErrorDetail
+		if ae.Field != "" {
+			details = []ErrorDetail{{Field: ae.Field, Message: msg}}
+		}
+		ErrorWithDetails(c, ae.Status, ae.Code, msg, ae.Details, details...)
 		return
 	}
 	LogInternal(err, "unexpected error")

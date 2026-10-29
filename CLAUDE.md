@@ -364,6 +364,39 @@ type UserHandler struct{ svc UserSvc }
 - Always filter `deletedAt: nil` in queries that should exclude deleted docs
 - Use `primitive.NewObjectID()` for new documents
 
+### Soft delete & revealing deleted records
+
+- Use `shared/softdelete.Clause(deletedOnly)` for the `deletedAt` filter value
+  (one expression of live-vs-removed, so the reveal flag can't be honoured on a
+  list and forgotten on the count beside it). `deletedOnly=false` yields the
+  plain `nil`.
+- **Duplicate checks are service-layer and soft-delete-aware**
+  (`{scope, field, deletedAt: nil}`), never a Mongo unique index — a unique
+  index keeps a deleted row's value blocked forever, so a name can't be reused
+  after its owner is removed.
+- **Soft delete appends `" [Deleted]"` to the identifying field** via an
+  aggregation-pipeline `UpdateOne` (`$concat`), matched on `deletedAt: nil`, so
+  a repeat delete 404s instead of double-appending and the freed value is
+  distinguishable.
+- Revealing deleted rows is opt-in and gated: a list route mounts
+  `middleware.RequireDeletedView()` beside (never instead of) its own permission
+  middleware; the handler passes `middleware.IncludeDeletedFromCtx(c)` into its
+  filter. A route that doesn't mount it cannot reveal — the failure mode is "the
+  toggle does nothing", never a leak.
+
+### Leaf packages & consumer-side ports
+
+- Shared rules live in `shared/<x>` leaf packages that import **nothing** from
+  `modules/` (one home per rule — see `shared/softdelete`, `shared/clock`,
+  `shared/audit`). A `shared/` package needing a module constant repeats it
+  locally rather than importing the module.
+- Cross-module calls go through **consumer-side ports**: the consumer declares a
+  small interface for exactly what it needs, and `apps/api/app/app.go` wires the
+  concrete in. This keeps the module graph a tree.
+- **Guard a possibly-nil concrete assigned to an interface port**
+  (`if svc != nil { port = svc }`): a nil `*T` stored in an interface is not
+  `nil`, so a later `port != nil` check passes and the call panics.
+
 ### i18n
 
 Language comes from the `x-custom-lang` request header (set by `pkgi18n.Middleware`):

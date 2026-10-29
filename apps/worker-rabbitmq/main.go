@@ -46,8 +46,8 @@ func main() {
 	mailer := email.NewMailerFromConfig(cfg, zapLog)
 
 	var fcmSender *notifSvc.FCMSender
-	if cfg.Firebase.CredentialsFile != "" {
-		fcmSender, err = notifSvc.NewFCMSender(cfg.Firebase.CredentialsFile)
+	if cfg.Notification.FCMEnabled && cfg.Firebase.CredentialsFile != "" {
+		fcmSender, err = notifSvc.NewFCMSender(cfg.Firebase.CredentialsFile, cfg.Firebase.AndroidChannelID)
 		if err != nil {
 			zapLog.Warn("worker-rabbitmq: FCM init failed", zap.Error(err))
 		}

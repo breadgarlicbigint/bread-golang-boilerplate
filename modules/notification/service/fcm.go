@@ -9,14 +9,26 @@ import (
 	"google.golang.org/api/option"
 )
 
+// DefaultAndroidChannelID is used when no channel id is configured. The value
+// MUST match `default_notification_channel_id` in the app's strings.xml and the
+// channel the app creates at IMPORTANCE_HIGH — a payload naming a channel the
+// device does not have is delivered on Firebase's own fallback channel at
+// DEFAULT importance, i.e. silently into the tray with no heads-up alert.
+// Nothing errors, so the symptom is "push doesn't work" from a path that is in
+// fact delivering. Override per project with FCM_ANDROID_CHANNEL_ID.
+const DefaultAndroidChannelID = "default"
+
 // FCMSender sends push notifications via Firebase Cloud Messaging.
 type FCMSender struct {
-	client *messaging.Client
+	client    *messaging.Client
+	channelID string
 }
 
 // NewFCMSender initialises a Firebase app from a service-account JSON file path
 // or from GOOGLE_APPLICATION_CREDENTIALS env var (preferred for production).
-func NewFCMSender(credentialFile string) (*FCMSender, error) {
+// channelID is the Android notification channel every push is delivered on; an
+// empty value falls back to DefaultAndroidChannelID.
+func NewFCMSender(credentialFile, channelID string) (*FCMSender, error) {
 	var opts []option.ClientOption
 	if credentialFile != "" {
 		opts = append(opts, option.WithCredentialsFile(credentialFile))
@@ -31,7 +43,59 @@ func NewFCMSender(credentialFile string) (*FCMSender, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fcm: get messaging client: %w", err)
 	}
-	return &FCMSender{client: client}, nil
+	if channelID == "" {
+		channelID = DefaultAndroidChannelID
+	}
+	return &FCMSender{client: client, channelID: channelID}, nil
+}
+
+// notification is the cross-platform alert block, absent for a silent message.
+func notification(p PushPayload) *messaging.Notification {
+	if p.Silent {
+		return nil
+	}
+	return &messaging.Notification{Title: p.Title, Body: p.Body, ImageURL: p.ImageURL}
+}
+
+// androidConfig is the Android half of a message, shared by Send and
+// SendMulticast rather than inlined in each: SendMulticast (the path production
+// uses) carried no AndroidConfig at all until this existed, so high priority and
+// the channel were configured only on the path nothing calls.
+func androidConfig(p PushPayload, channelID string) *messaging.AndroidConfig {
+	c := &messaging.AndroidConfig{Priority: "high"}
+	if p.Silent {
+		return c
+	}
+	c.Notification = &messaging.AndroidNotification{
+		Title:     p.Title,
+		Body:      p.Body,
+		ImageURL:  p.ImageURL,
+		Sound:     "default",
+		ChannelID: channelID,
+	}
+	return c
+}
+
+// apnsConfig is the iOS half. Priority 5 for a silent message is APNs' own rule,
+// not a preference: a background push sent at priority 10 is rejected.
+func apnsConfig(p PushPayload) *messaging.APNSConfig {
+	if p.Silent {
+		return &messaging.APNSConfig{
+			Headers: map[string]string{"apns-priority": "5"},
+			Payload: &messaging.APNSPayload{Aps: &messaging.Aps{ContentAvailable: true}},
+		}
+	}
+	badge := p.Badge
+	return &messaging.APNSConfig{
+		Headers: map[string]string{"apns-priority": "10"},
+		Payload: &messaging.APNSPayload{
+			Aps: &messaging.Aps{
+				Alert: &messaging.ApsAlert{Title: p.Title, Body: p.Body},
+				Badge: &badge,
+				Sound: "default",
+			},
+		},
+	}
 }
 
 // PushPayload contains all data needed for a single push message.
@@ -49,47 +113,23 @@ type PushPayload struct {
 }
 
 // Send dispatches a push notification to a single device token.
+//
+// Everything below the token is built by the same androidConfig/apnsConfig
+// SendMulticast uses, so the two paths cannot drift on priority, channel or the
+// silent-message rules — which they had, the multicast one carrying no platform
+// config at all.
 func (s *FCMSender) Send(ctx context.Context, p PushPayload) error {
 	msg := &messaging.Message{
-		Token: p.Token,
-		Data:  p.Data,
-		Notification: &messaging.Notification{
-			Title:    p.Title,
-			Body:     p.Body,
-			ImageURL: p.ImageURL,
-		},
-		Android: &messaging.AndroidConfig{
-			Priority: "high",
-			Notification: &messaging.AndroidNotification{
-				Title:    p.Title,
-				Body:     p.Body,
-				ImageURL: p.ImageURL,
-				Sound:    "default",
-			},
-		},
-		APNS: &messaging.APNSConfig{
-			Headers: map[string]string{
-				"apns-priority": "10",
-			},
-			Payload: &messaging.APNSPayload{
-				Aps: &messaging.Aps{
-					Alert: &messaging.ApsAlert{
-						Title: p.Title,
-						Body:  p.Body,
-					},
-					Badge: &p.Badge,
-					Sound: "default",
-				},
-			},
-		},
+		Token:        p.Token,
+		Data:         p.Data,
+		Notification: notification(p),
+		Android:      androidConfig(p, s.channelID),
+		APNS:         apnsConfig(p),
 	}
 
 	if p.Silent {
-		// Silent / data-only notification — no visible alert
-		msg.Notification = nil
-		msg.Android.Notification = nil
-		msg.APNS.Payload.Aps.Alert = nil
-		msg.APNS.Headers["apns-priority"] = "5"
+		// A data-only message must carry no `notification` block at all — one
+		// present is what makes the OS draw an alert, whatever the priority says.
 		if msg.Data == nil {
 			msg.Data = make(map[string]string)
 		}
@@ -108,13 +148,11 @@ func (s *FCMSender) SendMulticast(ctx context.Context, tokens []string, p PushPa
 	}
 
 	msg := &messaging.MulticastMessage{
-		Tokens: tokens,
-		Notification: &messaging.Notification{
-			Title:    p.Title,
-			Body:     p.Body,
-			ImageURL: p.ImageURL,
-		},
-		Data: p.Data,
+		Tokens:       tokens,
+		Notification: notification(p),
+		Data:         p.Data,
+		Android:      androidConfig(p, s.channelID),
+		APNS:         apnsConfig(p),
 	}
 
 	result, err := s.client.SendEachForMulticast(ctx, msg)

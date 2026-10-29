@@ -1,5 +1,5 @@
 # ── Build stage ────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS email-builder
+FROM node:22-alpine AS email-builder
 
 WORKDIR /email
 COPY email-templates/package*.json ./
@@ -14,6 +14,11 @@ RUN EMAIL_DIST_DIR=/dist npx tsx src/render.ts 2>/dev/null || echo "  ⚠  Email
 FROM golang:1.23-alpine AS builder
 
 ARG VERSION=dev
+# Set automatically by buildx from the target platform. Hardcoding amd64 here
+# produces an image that pulls cleanly onto an arm64 host and then dies with
+# "exec format error".
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 
 RUN apk add --no-cache ca-certificates tzdata
 
@@ -27,14 +32,24 @@ RUN go mod download || (go mod tidy && go mod download)
 COPY . .
 
 # Overwrite stub dist with React Email compiled output from the email-builder stage
-COPY --from=email-builder /pkg-email-dist/ ./pkg/email/dist/
+COPY --from=email-builder /dist/ ./pkg/email/dist/
 
 # Build — strip debug info
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build \
       -ldflags="-w -s -X main.Version=${VERSION}" \
       -o /app/server \
       ./apps/api
+
+# The index migration ships as a BINARY, not as source: a deployed host holds
+# images and config only, so `go run ./scripts/migrate` (what `make
+# migrate-indexes` does) has nothing to run. Deploy invokes it as a one-shot
+# container before the API starts.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build \
+      -ldflags="-w -s" \
+      -o /app/migrate \
+      ./scripts/migrate
 
 # ── Production image ───────────────────────────────────────────────────────────
 FROM alpine:3.20
@@ -46,6 +61,7 @@ RUN apk add --no-cache ca-certificates tzdata wget && \
 WORKDIR /app
 
 COPY --from=builder /app/server        ./server
+COPY --from=builder /app/migrate       ./migrate
 COPY --from=builder /app/locales       ./locales
 COPY --from=builder /app/.env.example  ./.env.example
 

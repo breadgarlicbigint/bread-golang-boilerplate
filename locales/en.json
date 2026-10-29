@@ -45,7 +45,10 @@
     "missingAuthHeader": "Missing or malformed Authorization header",
     "invalidAccessToken": "Invalid or expired access token",
     "insufficientRole": "Insufficient role",
-    "ownResourceOnly": "You can only access your own resources"
+    "ownResourceOnly": "You can only access your own resources",
+    "insufficientPermission": "You do not have permission to perform this action",
+    "tenantScopeRequired": "This action requires a tenant-scoped account",
+    "tenantMismatch": "These credentials are not valid for this tenant"
   },
   "user": {
     "fetchSuccess": "User fetched",
@@ -62,7 +65,11 @@
     "emailTaken": "Email is already registered",
     "usernameTaken": "Username is already taken",
     "invalidPassword": "Password does not meet requirements",
-    "passwordSameAsOld": "New password must be different from the current password"
+    "passwordSameAsOld": "New password must be different from the current password",
+    "setPasswordLinkSent": "A set-password link has been emailed",
+    "adminProtected": "Only a super admin can change an admin's login",
+    "emailUnavailable": "Email is not configured",
+    "emailQueueFailed": "The change was saved but the email could not be sent"
   },
   "passkey": {
     "registrationBegin": "Registration challenge ready",
@@ -95,7 +102,16 @@
     "upsertSuccess": "Version policy updated",
     "notFound": "No version policy found for this platform",
     "missingParams": "platform and version are required (header or query param)",
-    "invalidPlatform": "Invalid platform. Use: ios | android | web"
+    "invalidPlatform": "Invalid platform. Use: ios | android | web",
+    "releaseSuccess": "Build published",
+    "invalidVersionCode": "versionCode must be a positive integer",
+    "invalidMandatoryFlag": "isMandatoryUpdate must be true or false",
+    "notMonotonic": "This build's version is not newer than the one already published",
+    "invalidVersion": "Version must be in MAJOR.MINOR.PATCH form",
+    "storageUnavailable": "No storage driver is configured for build artefacts",
+    "artifactTooLarge": "The build artefact is too large",
+    "uploadFailed": "The upload could not be read",
+    "noDownload": "No build is published for this platform"
   },
   "notification": {
     "sendSuccess": "Notification sent",
@@ -112,7 +128,9 @@
     "testEmailFailed": "Test email failed",
     "testEmailSent": "Test email sent",
     "mailerNotConfigured": "Email delivery is not configured",
-    "emailNotAvailable": "Recipient email address is required in data.email for the email channel"
+    "emailNotAvailable": "Recipient email address is required in data.email for the email channel",
+    "deleteSuccess": "Notification removed",
+    "deleteAllSuccess": "Notifications cleared"
   },
   "realtime": {
     "publishSuccess": "Event published",
@@ -136,7 +154,16 @@
   },
   "role": {
     "listSuccess": "Roles fetched",
-    "notFound": "Role not found"
+    "notFound": "Role not found",
+    "notAssignable": "You may not assign this role",
+    "invalidPermissionGrant": "Invalid permission grant",
+    "cannotChangeOwnAccess": "You cannot change your own role or permissions"
+  },
+  "permissions": {
+    "users:read": "View users",
+    "users:write": "Manage users",
+    "audit:read": "View audit trail",
+    "settings:manage": "Manage settings"
   },
   "featureFlag": {
     "disabled": "This feature is not enabled"
@@ -159,6 +186,17 @@
     "invalidDateFormat": "Invalid date format — use YYYY-MM-DD",
     "queryFailed": "Analytics query failed"
   },
+  "audit": {
+    "listSuccess": "Audit trail fetched"
+  },
+  "export": {
+    "tooLarge": "This export is too large — narrow the filter and try again",
+    "yes": "Yes",
+    "no": "No",
+    "sheets": {
+      "audit": "Audit trail"
+    }
+  },
   "health": {
     "healthy": "Service is healthy",
     "degraded": "Service is degraded",
@@ -170,11 +208,82 @@
     "invalidQuery": "Invalid query parameters",
     "required": "{{.Field}} is required",
     "email": "{{.Field}} must be a valid email address",
-    "min": "{{.Field}} must be at least {{.Param}} characters",
-    "max": "{{.Field}} must not exceed {{.Param}} characters",
+    "uuid": "{{.Field}} must be a valid UUID",
+    "url": "{{.Field}} must be a valid URL",
+    "e164": "{{.Field}} must be a valid phone number in E.164 format (e.g. +15551234567)",
     "alphanum": "{{.Field}} must contain only letters and numbers",
-    "e164": "{{.Field}} must be a valid phone number in E.164 format",
-    "oneof": "{{.Field}} must be one of: {{.Param}}"
+    "alpha": "{{.Field}} must contain only letters",
+    "numeric": "{{.Field}} must be a number",
+    "oneof": "{{.Field}} must be one of: {{.Param}}",
+    "contains": "{{.Field}} must contain {{.Param}}",
+    "unique": "{{.Field}} must contain unique values",
+    "notblank": "{{.Field}} must not be blank",
+    "minLength": "{{.Field}} must be at least {{.Param}} characters long",
+    "maxLength": "{{.Field}} must not exceed {{.Param}} characters",
+    "lenLength": "{{.Field}} must be exactly {{.Param}} characters long",
+    "gtLength": "{{.Field}} must be longer than {{.Param}} characters",
+    "gteLength": "{{.Field}} must be at least {{.Param}} characters long",
+    "ltLength": "{{.Field}} must be shorter than {{.Param}} characters",
+    "lteLength": "{{.Field}} must not exceed {{.Param}} characters",
+    "minNumber": "{{.Field}} must be at least {{.Param}}",
+    "maxNumber": "{{.Field}} must not exceed {{.Param}}",
+    "lenNumber": "{{.Field}} must be exactly {{.Param}}",
+    "gtNumber": "{{.Field}} must be greater than {{.Param}}",
+    "gteNumber": "{{.Field}} must be greater than or equal to {{.Param}}",
+    "ltNumber": "{{.Field}} must be less than {{.Param}}",
+    "lteNumber": "{{.Field}} must be less than or equal to {{.Param}}",
+    "minItems": "{{.Field}} must contain at least {{.Param}} entries",
+    "maxItems": "{{.Field}} must not contain more than {{.Param}} entries",
+    "lenItems": "{{.Field}} must contain exactly {{.Param}} entries",
+    "gtItems": "{{.Field}} must contain more than {{.Param}} entries",
+    "gteItems": "{{.Field}} must contain at least {{.Param}} entries",
+    "ltItems": "{{.Field}} must contain fewer than {{.Param}} entries",
+    "lteItems": "{{.Field}} must not contain more than {{.Param}} entries",
+    "default": "{{.Field}} is not valid"
+  },
+  "pagination": {
+    "invalidGroupBy": "This list cannot be grouped by the selected column"
+  },
+  "fields": {
+    "body": "Message",
+    "channel": "Channel",
+    "code": "Code",
+    "command": "Command",
+    "email": "Email address",
+    "extraPermissions": "Extra permissions",
+    "revokedPermissions": "Revoked permissions",
+    "tenantSlug": "Tenant",
+    "firstName": "First name",
+    "friendlyName": "Device name",
+    "gender": "Gender",
+    "lastName": "Last name",
+    "metric": "Metric",
+    "newPassword": "New password",
+    "oldPassword": "Current password",
+    "password": "Password",
+    "phoneNumber": "Phone number",
+    "platform": "Platform",
+    "profilePicture": "Profile picture",
+    "reason": "Reason",
+    "refreshToken": "Refresh token",
+    "response": "Response",
+    "roleId": "Role",
+    "sessionToken": "Session token",
+    "title": "Title",
+    "to": "Recipient",
+    "token": "Token",
+    "topic": "Topic",
+    "type": "Type",
+    "userId": "User",
+    "userIds": "Users",
+    "username": "Username",
+    "at": "Time",
+    "action": "Action",
+    "entityType": "Type",
+    "entityId": "Record",
+    "actorId": "Actor",
+    "actorRole": "Role",
+    "risk": "Risk"
   },
   "email": {
     "layout": {

@@ -15,6 +15,37 @@ type AppError struct {
 	Key    string `json:"-"`
 	Status int    `json:"-"`
 	Err    error  `json:"-"`
+	// Field is the DTO's JSON tag name this error is attributable to (e.g.
+	// "email", "username") — empty for errors not tied to a single field.
+	// HandleAppError forwards it as a response.ErrorDetail so a client renders
+	// it under the right input instead of a general banner.
+	Field string `json:"-"`
+	// Details is an optional structured payload carried alongside the error —
+	// anything a client needs to ACT on the refusal rather than only report it
+	// (e.g. where a record is still referenced, which choices to offer). It is
+	// forwarded onto the error envelope as `details`, omitempty, so every error
+	// that sets none of this stays byte-identical. Keep it to wire values and
+	// enums, never prose or an identifier rendered as text.
+	Details any `json:"-"`
+}
+
+// WithField returns a copy of e with Field set. Sentinel errors below are
+// shared package-level vars, so this must copy rather than mutate in place —
+// otherwise concurrent requests attaching different fields to the same sentinel
+// (e.g. ErrConflict) would race.
+func (e *AppError) WithField(field string) *AppError {
+	cp := *e
+	cp.Field = field
+	return &cp
+}
+
+// WithDetails returns a copy of e carrying a structured payload (see Details).
+// A copy for the same reason WithField copies: the sentinels are shared vars, so
+// mutating in place would let one request's payload surface on another's error.
+func (e *AppError) WithDetails(details any) *AppError {
+	cp := *e
+	cp.Details = details
+	return &cp
 }
 
 func (e *AppError) Error() string { return e.Message }
@@ -56,6 +87,11 @@ var (
 
 	// Auth
 	ErrInvalidCredentials = NewI18n(http.StatusUnauthorized, "INVALID_CREDENTIALS", "auth.invalidCredentials", "Invalid email or password")
+	// ErrTenantMismatch covers every way a login's tenant slug can be wrong —
+	// unknown slug, a real slug belonging to another tenant, or a platform user
+	// supplying one at all. Deliberately ONE error for all three: distinguishing
+	// them would make login an oracle for which tenant an email belongs to.
+	ErrTenantMismatch = NewI18n(http.StatusUnauthorized, "TENANT_MISMATCH", "auth.tenantMismatch", "These credentials are not valid for this tenant")
 	ErrAccountLocked      = NewI18n(http.StatusUnauthorized, "ACCOUNT_LOCKED", "auth.accountLocked", "Account is temporarily locked")
 	ErrTokenExpired       = NewI18n(http.StatusUnauthorized, "TOKEN_EXPIRED", "auth.tokenExpired", "Token has expired")
 	ErrTokenInvalid       = NewI18n(http.StatusUnauthorized, "TOKEN_INVALID", "auth.tokenInvalid", "Token is invalid")
@@ -68,6 +104,16 @@ var (
 	ErrUsernameTaken     = NewI18n(http.StatusConflict, "USERNAME_TAKEN", "user.usernameTaken", "Username is already taken")
 	ErrInvalidPassword   = NewI18n(http.StatusBadRequest, "INVALID_PASSWORD", "user.invalidPassword", "Password does not meet requirements")
 	ErrPasswordSameAsOld = NewI18n(http.StatusBadRequest, "PASSWORD_SAME_AS_OLD", "user.passwordSameAsOld", "New password must be different from the current password")
+	// ErrAdminProtected refuses a reset/resend aimed at a wildcard (admin) user
+	// by a caller who is not themselves a wildcard holder — only a super admin
+	// may act on an admin's login.
+	ErrAdminProtected = NewI18n(http.StatusForbidden, "ADMIN_PROTECTED", "user.adminProtected", "Only a super admin can change an admin's login")
+	// ErrEmailUnavailable is returned BEFORE anything is written: an action that
+	// must email a link cannot proceed with no mailer, and must not half-happen.
+	ErrEmailUnavailable = NewI18n(http.StatusServiceUnavailable, "EMAIL_UNAVAILABLE", "user.emailUnavailable", "Email is not configured")
+	// ErrEmailQueueFailed means the write happened but the message could not be
+	// queued — reported so the operator knows to resend rather than assume done.
+	ErrEmailQueueFailed = NewI18n(http.StatusBadGateway, "EMAIL_QUEUE_FAILED", "user.emailQueueFailed", "The change was saved but the email could not be sent")
 
 	// API Key
 	ErrAPIKeyNotFound = NewI18n(http.StatusNotFound, "API_KEY_NOT_FOUND", "apiKey.notFound", "API key not found")
@@ -76,6 +122,16 @@ var (
 
 	// Role
 	ErrRoleNotFound = NewI18n(http.StatusNotFound, "ROLE_NOT_FOUND", "role.notFound", "Role not found")
+	// ErrRoleNotAssignable: a non-wildcard admin tried to assign a role outside
+	// the allowlisted assignable set (e.g. the admin/wildcard role itself).
+	ErrRoleNotAssignable = NewI18n(http.StatusForbidden, "ROLE_NOT_ASSIGNABLE", "role.notAssignable", "You may not assign this role")
+	// ErrInvalidPermissionGrant: a per-user permission grant/withdrawal named an
+	// unknown slug, the wildcard, or the same slug in both the grant and
+	// withdrawal lists.
+	ErrInvalidPermissionGrant = NewI18n(http.StatusUnprocessableEntity, "INVALID_PERMISSION_GRANT", "role.invalidPermissionGrant", "Invalid permission grant")
+	// ErrCannotChangeOwnAccess: nobody changes their own role or permissions, on
+	// any route — a self-elevation guard.
+	ErrCannotChangeOwnAccess = NewI18n(http.StatusForbidden, "CANNOT_CHANGE_OWN_ACCESS", "role.cannotChangeOwnAccess", "You cannot change your own role or permissions")
 
 	// Feature flag
 	ErrFeatureDisabled = NewI18n(http.StatusForbidden, "FEATURE_DISABLED", "featureFlag.disabled", "This feature is not enabled")

@@ -3,19 +3,20 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/auth/dto"
+	roleentity "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/entity"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/entity"
+	pkgemail "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/email"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
+	jwtpkg "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/jwt"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
 	"github.com/google/uuid"
 	"github.com/pquerna/otp/totp"
 	"github.com/redis/go-redis/v9"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/auth/dto"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/errors"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/config"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/modules/user/entity"
-	roleentity "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/entity"
-	"github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/hash"
-	jwtpkg "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/jwt"
-	pkgemail "github.com/breadgarlicbigint/bread-golang-boilerplate/pkg/email"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.uber.org/zap"
 )
@@ -44,16 +45,34 @@ type RoleRepo interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*roleentity.Role, error)
 }
 
+// TenantResolver resolves the tenant slug supplied at login to its id. Optional
+// dependency (attached via WithTenants): without it a tenantSlug on the request
+// is rejected rather than silently ignored, because ignoring it would let a
+// wrong slug appear to work. Returns uuid.Nil + a non-nil error when the slug
+// is unknown.
+type TenantResolver interface {
+	TenantIDBySlug(ctx context.Context, slug string) (uuid.UUID, error)
+}
+
 type AuthService struct {
 	userRepo    UserRepo
 	userSvc     UserSvc
 	roleRepo    RoleRepo
+	tenants     TenantResolver
 	jwtMgr      *jwtpkg.Manager
 	hasher      *hash.Hasher
 	rdb         *redis.Client
 	cfg         config.Config
 	localMailer *pkgemail.LocalizedMailer
 	log         *zap.Logger
+}
+
+// WithTenants attaches the tenant-slug resolver used by tenant-bound login.
+// Optional so the constructor signature and every existing caller stay
+// unchanged; a request carrying a tenantSlug fails closed when it is absent.
+func (s *AuthService) WithTenants(t TenantResolver) *AuthService {
+	s.tenants = t
+	return s
 }
 
 func New(
@@ -99,7 +118,39 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest, ip string
 		_ = s.userSvc.HandleFailedLogin(ctx, u)
 		return nil, errors.ErrInvalidCredentials
 	}
+	// Checked AFTER the password, deliberately: answering "wrong tenant" to an
+	// unauthenticated caller would turn login into an oracle for which tenant an
+	// email belongs to.
+	if err := s.assertTenantMatches(ctx, req.TenantSlug, u); err != nil {
+		return nil, err
+	}
 	return s.issueTokenPair(ctx, u, ip)
+}
+
+// assertTenantMatches enforces the tenant slug supplied at login. An empty slug
+// is accepted unchanged (the JWT's tenant is read from the user record, not the
+// request). A platform user (uuid.Nil tenant) has no tenant, so any slug is a
+// mismatch for them.
+func (s *AuthService) assertTenantMatches(ctx context.Context, slug string, u *entity.User) error {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" {
+		return nil
+	}
+	// Fail closed rather than ignore: a silently-dropped slug would let a wrong
+	// tenant slug look like it worked.
+	if s.tenants == nil {
+		return errors.ErrTenantMismatch
+	}
+	tid, err := s.tenants.TenantIDBySlug(ctx, slug)
+	if err != nil || tid == uuid.Nil {
+		// Same error as a real mismatch — an unknown slug and a wrong-but-real
+		// slug must be indistinguishable, or login re-opens tenant enumeration.
+		return errors.ErrTenantMismatch
+	}
+	if u.TenantID == uuid.Nil || u.TenantID != tid {
+		return errors.ErrTenantMismatch
+	}
+	return nil
 }
 
 // Register creates a new user account and returns tokens.
@@ -211,20 +262,90 @@ func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error
 
 // ── Internal ──────────────────────────────────────────────────────────────────
 
+// unionPermissions appends extras that the role does not already grant, keeping
+// the role's order first and dropping duplicates.
+func unionPermissions(rolePerms, extras []string) []string {
+	if len(extras) == 0 {
+		return rolePerms
+	}
+	seen := make(map[string]struct{}, len(rolePerms)+len(extras))
+	out := make([]string, 0, len(rolePerms)+len(extras))
+	for _, p := range append(append([]string{}, rolePerms...), extras...) {
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
+// effectivePermissions resolves what actually reaches the JWT:
+//
+//	(role ∪ extraPermissions) − revokedPermissions
+//
+// THE resolver, and the single place that decides what a person can do — a
+// second copy elsewhere would be a second answer.
+//
+// A WILDCARD ROLE IS NOT SUBTRACTABLE, and that branch is the whole safety of
+// the feature. "*" is not an enumeration of permissions, it is a claim that
+// every gate passes — so "revoke X from an admin" has no coherent meaning:
+// subtracting a slug from a list containing only "*" removes nothing, while
+// expanding "*" into a concrete set to subtract from would silently demote the
+// holder to whatever that set happened to contain. Both readings are wrong, so
+// the wildcard is returned untouched; taking capability from a wildcard holder
+// is a role change, not a checkbox.
+func effectivePermissions(rolePerms, extras, revoked []string) []string {
+	perms := unionPermissions(rolePerms, extras)
+	if len(revoked) == 0 {
+		return perms
+	}
+	for _, p := range perms {
+		if p == string(roleentity.PermAll) {
+			return perms
+		}
+	}
+	drop := make(map[string]struct{}, len(revoked))
+	for _, p := range revoked {
+		drop[p] = struct{}{}
+	}
+	out := make([]string, 0, len(perms))
+	for _, p := range perms {
+		if _, gone := drop[p]; gone {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 func (s *AuthService) issueTokenPair(ctx context.Context, u *entity.User, ip string) (*dto.LoginResponse, error) {
 	sessionID := uuid.NewString()
-	// Resolve the role slug (e.g. "admin") for the JWT claim.
-	// RoleProtected middleware compares against slugs, not UUIDs.
+	// Resolve the role slug (e.g. "admin") + its permission set for the JWT
+	// claims. RoleProtected compares against slugs; RequirePermission checks the
+	// flattened permission list.
 	roleSlug := "user" // safe default
+	var permissions []string
 	if r, err := s.roleRepo.FindByID(ctx, u.RoleID); err == nil {
 		roleSlug = string(r.Slug)
+		permissions = make([]string, 0, len(r.Permissions))
+		for _, p := range r.Permissions {
+			permissions = append(permissions, string(p))
+		}
+	}
+	// Effective permissions = (role ∪ per-user grants) − per-user withdrawals.
+	permissions = effectivePermissions(permissions, u.ExtraPermissions, u.RevokedPermissions)
+	// tenantID is "" for a platform-scoped user (uuid.Nil).
+	tenantID := ""
+	if u.TenantID != uuid.Nil {
+		tenantID = u.TenantID.String()
 	}
 
-	accessToken, accessExp, err := s.jwtMgr.IssueAccess(u.ID.String(), sessionID, roleSlug)
+	accessToken, accessExp, err := s.jwtMgr.IssueAccess(u.ID.String(), sessionID, roleSlug, tenantID, permissions)
 	if err != nil {
 		return nil, err
 	}
-	refreshToken, _, err := s.jwtMgr.IssueRefresh(u.ID.String(), sessionID, roleSlug)
+	refreshToken, _, err := s.jwtMgr.IssueRefresh(u.ID.String(), sessionID, roleSlug, tenantID, permissions)
 	if err != nil {
 		return nil, err
 	}

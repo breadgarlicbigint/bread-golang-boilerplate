@@ -138,7 +138,7 @@ func TestCreate_Success(t *testing.T) {
 		LastName:  "Smith",
 		RoleID:    uuid.New().String(),
 	}
-	u, err := svc.Create(context.Background(), "en", req)
+	u, err := svc.Create(context.Background(), "en", req, userSvc.Actor{HasWildcard: true})
 	if err != nil {
 		t.Fatalf("Create: unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestCreate_DuplicateEmail(t *testing.T) {
 	_, err := svc.Create(context.Background(), "en", dto.CreateUserRequest{
 		Email: "alice@example.com", Username: "alice2", Password: "Password@123",
 		FirstName: "A", LastName: "B", RoleID: uuid.New().String(),
-	})
+	}, userSvc.Actor{HasWildcard: true})
 	if err == nil {
 		t.Fatal("expected ErrEmailTaken")
 	}
@@ -174,7 +174,7 @@ func TestCreate_DuplicateUsername(t *testing.T) {
 	_, err := svc.Create(context.Background(), "en", dto.CreateUserRequest{
 		Email: "other@example.com", Username: "alice", Password: "Password@123",
 		FirstName: "A", LastName: "B", RoleID: uuid.New().String(),
-	})
+	}, userSvc.Actor{HasWildcard: true})
 	ae, ok := errors.As(err)
 	if !ok || ae.Code != "USERNAME_TAKEN" {
 		t.Errorf("expected USERNAME_TAKEN, got: %v", err)
