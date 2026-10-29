@@ -30,6 +30,7 @@ type Config struct {
 	I18n         I18nConfig
 	Tenant       TenantConfig
 	Notification NotificationConfig
+	TestClock    TestClockConfig
 	Sentry       SentryConfig
 	Worker       WorkerConfig
 	Queue        QueueConfig
@@ -308,6 +309,7 @@ func Load() (*Config, error) {
 	v.SetDefault("BASE_DOMAIN", "localhost")
 	v.SetDefault("NOTIFICATION_ENABLED", true)
 	v.SetDefault("APP_VERSION_CHECK_ENABLED", true)
+	v.SetDefault("ALLOW_TEST_CLOCK", false) // must stay off everywhere but tests
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -474,6 +476,9 @@ func Load() (*Config, error) {
 		Enabled:    v.GetBool("MULTI_TENANT_ENABLED"),
 		BaseDomain: v.GetString("BASE_DOMAIN"),
 	}
+	cfg.TestClock = TestClockConfig{
+		Allowed: v.GetBool("ALLOW_TEST_CLOCK"),
+	}
 	cfg.Notification = NotificationConfig{
 		Enabled:         v.GetBool("NOTIFICATION_ENABLED"),
 		WhatsAppEnabled: v.GetBool("WHATSAPP_ENABLED"),
@@ -533,6 +538,15 @@ type I18nConfig struct {
 // its *_ENABLED flag is set AND its credentials are present; otherwise the
 // sender logs a "(sim)" line and sends nothing — so default dev and the whole
 // test suite run fully offline (zero credentials ⇒ no external send).
+// TestClockConfig gates the X-Test-Now header. It exists so a live suite can
+// exercise date boundaries without restarting the server against a frozen clock.
+// Default false — and in every deployed environment — so no request can change
+// what time the server believes it is. Gated by configuration a request cannot
+// influence, deliberately unlike the spoofable X-App-* headers.
+type TestClockConfig struct {
+	Allowed bool `mapstructure:"ALLOW_TEST_CLOCK"`
+}
+
 type NotificationConfig struct {
 	Enabled         bool `mapstructure:"NOTIFICATION_ENABLED"`
 	WhatsAppEnabled bool `mapstructure:"WHATSAPP_ENABLED"` // Twilio WhatsApp

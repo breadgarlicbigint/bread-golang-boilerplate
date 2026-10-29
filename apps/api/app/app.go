@@ -285,6 +285,7 @@ func New(cfg *config.Config, log *zap.Logger, mongo *database.MongoDB, rdb *redi
 		rateLimiter.Middleware(),
 		versionMw,
 		activityMw,
+		middleware.TestClock(cfg.TestClock.Allowed),
 	)
 
 	if translator != nil {
