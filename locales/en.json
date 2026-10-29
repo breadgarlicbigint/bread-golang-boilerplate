@@ -180,6 +180,14 @@
   "audit": {
     "listSuccess": "Audit trail fetched"
   },
+  "export": {
+    "tooLarge": "This export is too large — narrow the filter and try again",
+    "yes": "Yes",
+    "no": "No",
+    "sheets": {
+      "audit": "Audit trail"
+    }
+  },
   "health": {
     "healthy": "Service is healthy",
     "degraded": "Service is degraded",
@@ -259,7 +267,14 @@
     "type": "Type",
     "userId": "User",
     "userIds": "Users",
-    "username": "Username"
+    "username": "Username",
+    "at": "Time",
+    "action": "Action",
+    "entityType": "Type",
+    "entityId": "Record",
+    "actorId": "Actor",
+    "actorRole": "Role",
+    "risk": "Risk"
   },
   "email": {
     "layout": {

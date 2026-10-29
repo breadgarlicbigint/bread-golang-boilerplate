@@ -58,6 +58,20 @@ changes ported back from downstream projects and other upstream improvements.
   and a config-hygiene test asserting every env var is documented in
   `.env.example`.
 
+### Added (opt-in features — B4–B12)
+- **Audit trail** (`shared/audit` + `modules/activity`): before/after change
+  records, append-only, read behind `audit:read` + tenant scope.
+- **Soft-delete toolkit** (`shared/softdelete` + `middleware.RequireDeletedView`).
+- **Server-side grouping / group paging** (`shared/pagination`); ungrouped
+  responses stay byte-identical.
+- **Spreadsheet export** (`shared/export`): `?format=xlsx` on a list endpoint
+  inherits its gate/tenant/filters; headers come from the `fields.` locale
+  dictionary. Adds dependency **`github.com/xuri/excelize/v2` v2.9.0** (pinned
+  for Go < 1.25).
+- **Notification inbox delete/clear**, **context test clock**
+  (`ALLOW_TEST_CLOCK` + `X-Test-Now`), and **account-lifecycle emails**
+  (set-password link by default; direct reset opt-in).
+
 ### Fixed
 - Rate limiter no longer renews the window TTL on every request, so a client
   at the limit is admitted again after the window elapses (was blocked

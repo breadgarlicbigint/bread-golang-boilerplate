@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/export/exportscan"
 )
 
 // Trees scanned for validated DTO fields. Every request struct the API binds
@@ -140,20 +142,32 @@ func TestFieldLabels_CoverEveryValidatedDTOField(t *testing.T) {
 }
 
 // The dictionary must not rot either: a label for a field that no DTO validates
-// is dead weight that hides real drift.
+// AND no export column uses is dead weight that hides real drift. The `fields`
+// block has two consumers — validation messages and spreadsheet export headers
+// (shared/export) — so the orphan check must know about both or it would demand
+// deleting every export-only label.
 func TestFieldLabels_HaveNoOrphans(t *testing.T) {
 	fields := validatedFieldNames(t)
+
+	exported, err := exportscan.Scan(dtoRoots...)
+	if err != nil {
+		t.Fatalf("scan export columns: %v", err)
+	}
 
 	for _, lang := range labelledLocales {
 		var orphans []string
 		for name := range fieldLabels(t, lang) {
-			if _, ok := fields[name]; !ok {
-				orphans = append(orphans, name)
+			if _, ok := fields[name]; ok {
+				continue
 			}
+			if exported.FieldNames[name] {
+				continue
+			}
+			orphans = append(orphans, name)
 		}
 		sort.Strings(orphans)
 		if len(orphans) > 0 {
-			t.Errorf("locales/%s.json labels %d field(s) that no DTO validates — drop them:\n  %s",
+			t.Errorf("locales/%s.json labels %d field(s) that no DTO validates and no export column uses — drop them:\n  %s",
 				lang, len(orphans), strings.Join(orphans, "\n  "))
 		}
 	}

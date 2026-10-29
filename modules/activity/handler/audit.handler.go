@@ -12,10 +12,23 @@ import (
 	activitySvc "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/activity/service"
 	roleentity "github.com/breadgarlicbigint/bread-golang-boilerplate/modules/role/entity"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/audit"
+	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/export"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/middleware"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/pagination"
 	"github.com/breadgarlicbigint/bread-golang-boilerplate/shared/response"
 )
+
+// auditExportColumns is the ?format=xlsx layout for the trail. Headers resolve
+// through the same fields. locale dictionary validation messages use.
+var auditExportColumns = []export.Column{
+	{Field: "at", Kind: export.Date},
+	{Field: "action", Kind: export.Text},
+	{Field: "entityType", Kind: export.Text},
+	{Field: "entityId", Kind: export.Text},
+	{Field: "actorId", Kind: export.Text},
+	{Field: "actorRole", Kind: export.Text},
+	{Field: "risk", Kind: export.Text},
+}
 
 // Svc is the handler's view of the audit service.
 type Svc interface {
@@ -63,6 +76,19 @@ func (h *AuditHandler) List(c *gin.Context) {
 		Risk:       c.Query("risk"),
 	}
 	q := pagination.FromContext(c)
+
+	// The whole filtered result set as a spreadsheet (?format=xlsx). Checked
+	// BEFORE the grouping branches: grouping arranges rows on a screen, an export
+	// carries the records themselves and inherits this route's gate/filters.
+	if export.Requested(c) {
+		rows, total, err := h.svc.List(c.Request.Context(), tenant(c), f, export.Query(q))
+		if err != nil {
+			response.HandleAppError(c, err)
+			return
+		}
+		export.Respond(c, "audit", auditExportColumns, rows, total)
+		return
+	}
 
 	// Group-paged: the page windows the VISIBLE sequence (headers + rows of open
 	// groups). Checked before IsGrouped, which it implies.
